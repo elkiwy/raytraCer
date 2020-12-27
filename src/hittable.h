@@ -5,6 +5,8 @@
 #include "vec3.h"
 #include "ray.h"
 
+struct material;
+
 /**
  *
  * Hittable
@@ -14,12 +16,16 @@
 typedef struct{
     point3 p;
     vec3 normal;
+    struct material* mat;
     double t;
     int front_face;
 }hit_record;
 
+
+
+
 inline static void hit_record_set_facenormal(hit_record* rec, ray* r, vec3* outward_normal){
-    rec->front_face = (vec3_dot(&(r->dir), outward_normal) < 0);
+    rec->front_face = vec3_dot(&(r->dir), outward_normal) < 0;
     rec->normal = rec->front_face ? vec3_copy(outward_normal) : vec3_flip(outward_normal);
 }
 
@@ -38,6 +44,7 @@ typedef struct{
 typedef struct{
     point3 center;
     double r;
+    struct material* mat;
 }sphere;
 
 typedef struct{
@@ -47,13 +54,14 @@ typedef struct{
 }hittable_list;
 
 
-hittable* hittable_sphere_new(hittable_list* world, double x, double y, double z, double r){
+hittable* hittable_sphere_new(hittable_list* world, double x, double y, double z, double r, struct material* mat){
     //Create the sphere
     sphere* s = malloc(sizeof(sphere));
     s->center.x = x;
     s->center.y = y;
     s->center.z = z;
     s->r = r;
+    s->mat = mat;
 
     //Create the hittable generic
     hittable* o = malloc(sizeof(hittable));
@@ -83,7 +91,9 @@ int sphere_hit(sphere* s, ray* r, double tmin, double tmax, hit_record* rec){
     double c = vec3_length_squared(&oc) - s->r * s->r;
 
     double discriminant = half_b*half_b - a*c;
-    if (discriminant < 0){return 0;}
+    if (discriminant < 0){
+        return 0;
+    }
     double sqrtd = sqrt(discriminant);
 
     //Find nearest root that lies in the acceptable range.
@@ -99,8 +109,7 @@ int sphere_hit(sphere* s, ray* r, double tmin, double tmax, hit_record* rec){
     rec->p = ray_at(r, rec->t);
     vec3 outward_normal = vec3c_div_k(vec3_sub(&rec->p, &s->center), s->r);
     hit_record_set_facenormal(rec, r, &outward_normal);
-
-    rec->normal = vec3c_div_k(vec3_sub(&(rec->p), &(s->center)), s->r);
+    rec->mat = s->mat;
     return 1;
 }
 

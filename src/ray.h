@@ -20,8 +20,8 @@ inline static point3 ray_at(ray* r, double t){
     return vec3_sum(&r->orig, &a);
 }
 
-void ray_print(ray* r){
-    printf("Ray: orig: [%f %f %f] dir: [%f %f %f]", r->orig.x, r->orig.y, r->orig.z, r->dir.x, r->dir.y, r->dir.z);
+void ray_print(char* s, ray* r){
+    printf("%s: orig: [%.2f %.2f %.2f] dir: [%.2f %.2f %.2f]\n", s, r->orig.x, r->orig.y, r->orig.z, r->dir.x, r->dir.y, r->dir.z);
 }
 
 
