@@ -1,7 +1,10 @@
 #ifndef __CAMERA_H_
 #define __CAMERA_H_
 
+//Include standard modules
 #include <stdlib.h>
+
+//Include custom modules
 #include "vec3.h"
 #include "ray.h"
 
@@ -16,31 +19,66 @@ typedef struct {
     point3 lower_left_corner;
     vec3 horizontal;
     vec3 vertical;
+    vec3 u;
+    vec3 v;
+    vec3 w;
+    double lens_radius;
 }camera;
 
-camera* camera_new(){
+
+///Initialize the camera object
+camera* camera_new(point3 lookfrom, point3 lookat, vec3 vup, double vfov, double aspect_ratio, double aperture, double focus_dist){
+    ///Alloc memory
     camera* c = malloc(sizeof(camera));
 
-    const double ASPECT_RATIO = 16.0/9.0;
-    double viewport_height = 2.0;
-    double viewport_width = ASPECT_RATIO * viewport_height;
-    double focal_length = 1.0;
 
-    c->origin = (vec3){0, 0, 0};
-    c->horizontal = (vec3){viewport_width, 0, 0};
-    c->vertical = (vec3){0, viewport_height, 0};
-    vec3 depth = {0, 0, focal_length};
-    c->lower_left_corner = vec3c_sub(vec3c_sub(vec3c_sub(c->origin, vec3_div_k(&(c->horizontal), 2.0)), vec3_div_k(&(c->vertical), 2.0)), depth);
+    /*
+    ** NOTE:
+    ** VFov is the angle of view of the camera,
+    ** h is the half height of the image the camera sees with that angle
+     */
+
+    //Setup fov and viewport
+    double theta = deg2rad(vfov);
+    double h = tan(theta/2.0);
+    double viewport_height = 2.0*h;
+    double viewport_width = aspect_ratio * viewport_height;
+
+
+    /*
+    ** NOTE:
+    ** W,U,V are all unit vectors parallel and perpendicular to the camera plane
+     */
+
+    //Setup camera plane
+    c->w = vec3c_unit(vec3_sub(&lookfrom, &lookat));
+    c->u = vec3c_unit(vec3_cross(&vup, &c->w));
+    c->v = vec3_cross(&c->w, &c->u);
+
+    //Setup origin and screens
+    c->origin = lookfrom;
+    c->horizontal = vec3c_mul_k(vec3_mul_k(&c->u, viewport_width), focus_dist);
+    c->vertical = vec3c_mul_k(vec3_mul_k(&c->v, viewport_height), focus_dist);
+    c->lower_left_corner = vec3c_sub(vec3c_sub(vec3c_sub(c->origin, vec3_div_k(&(c->horizontal), 2.0)), vec3_div_k(&(c->vertical), 2.0)), vec3_mul_k(&c->w, focus_dist));
+
+    //Setup focus
+    c->lens_radius = aperture / 2.0;
     return c;
 }
 
+///Free memory of camera object
 void camera_free(camera* c){
     free(c);
 }
 
-ray camera_get_ray(camera* c, double u, double v){
-    vec3 dir = vec3c_sub(vec3c_sum(vec3c_sum(c->lower_left_corner, vec3_mul_k(&c->horizontal, u)), vec3_mul_k(&c->vertical, v)), c->origin);
-    return (ray){c->origin, dir};
+///Obtain a ray from the camera origin to the specified point, through the lens of the camera to obtain depth of field focus
+ray camera_get_ray(camera* c, double s, double t){
+    vec3 rd = vec3c_mul_k(random_in_unit_disk(), c->lens_radius);
+    vec3 offset = vec3c_sum(vec3_mul_k(&c->u, rd.x), vec3_mul_k(&c->v, rd.y));
+    vec3 dir = vec3c_sub(vec3c_sum(vec3c_sum(c->lower_left_corner, vec3_mul_k(&c->horizontal, s)), vec3_mul_k(&c->vertical, t)), c->origin);
+    dir = vec3_sub(&dir, &offset);
+    vec3 orig = vec3_sum(&c->origin, &offset);
+    return (ray){orig, dir};
 }
 
 

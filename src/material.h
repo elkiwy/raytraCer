@@ -9,14 +9,9 @@
 #include "hittable.h"
 
 
-
-
 //Generic material struct
 typedef enum{MATERIAL_LAMBERTIAN, MATERIAL_METAL, MATERIAL_DIELECTRIC} material_type;
-typedef struct{
-    material_type type;
-    void* mat;
-}material;
+typedef struct{material_type type; void* mat;}material;
 
 //Materials
 typedef struct{color albedo;}material_lambertian;
@@ -25,6 +20,12 @@ typedef struct{double ir;}material_dielectric;
 
 
 
+
+/**
+ * Materials Initializations
+ */
+
+///Init Lambertian
 material* material_lambertian_new(color a){
     material* m = malloc(sizeof(material));
     m->type = MATERIAL_LAMBERTIAN;
@@ -34,6 +35,7 @@ material* material_lambertian_new(color a){
     return m;
 }
 
+///Init metal
 material* material_metal_new(color a, double fuzz){
     material* m = malloc(sizeof(material));
     m->type = MATERIAL_METAL;
@@ -44,7 +46,7 @@ material* material_metal_new(color a, double fuzz){
     return m;
 }
 
-
+///Init dielectric
 material* material_dielectric_new(double ir){
     material* m = malloc(sizeof(material));
     m->type = MATERIAL_DIELECTRIC;
@@ -56,8 +58,13 @@ material* material_dielectric_new(double ir){
 
 
 
+/**
+ * Material Scattering
+ */
 
+///Scatter a ray that hits a lambertian material
 int material_lambertian_scatter(material_lambertian* mat, ray*r, hit_record* rec, color* attenuation, ray* scattered){
+    //Scatter the ray following the normal of the hit, and slightly randomize it
     vec3 scatter_direction = vec3c_sum(rec->normal, vec3_random_unit_vector_in_unit_sphere());
     //Check for near zero scattered directions
     if (vec3_is_near_zero(&scatter_direction)){scatter_direction = rec->normal;}
@@ -67,8 +74,11 @@ int material_lambertian_scatter(material_lambertian* mat, ray*r, hit_record* rec
 }
 
 
+///Scatter a ray that hits a metal material
 int material_metal_scatter(material_metal* mat, ray*r, hit_record* rec, color* attenuation, ray* scattered){
+    //Scatter the ray reflecting it using the normal as bisector
     vec3 reflected = vec3c_reflect(vec3_unit(&r->dir), rec->normal);
+    //Randomize it with fuzz
     vec3 scattered_direction = vec3c_sum(reflected, vec3c_mul_k(vec3_random_in_unit_sphere(), mat->fuzz));
     *scattered = (ray){rec->p, scattered_direction};
     *attenuation = mat->albedo;
@@ -77,15 +87,10 @@ int material_metal_scatter(material_metal* mat, ray*r, hit_record* rec, color* a
 }
 
 
-
-double reflectance(double cosine, double ref_idx){
-    double r0 = (1-ref_idx) / (1+ref_idx);
-    r0 = r0*r0;
-    return r0 + (1-r0)*pow((1-cosine),5);
-}
-
+///Reflectance formula
+double reflectance(double cosine, double ref_idx){double r0 = (1-ref_idx) / (1+ref_idx); r0 = r0*r0; return r0 + (1-r0)*pow((1-cosine),5);}
+///Scatter a ray that hits a dielectric material
 int material_dielectric_scatter(material_dielectric* mat, ray*r, hit_record* rec, color* attenuation, ray* scattered){
-    *attenuation = (color){1,1,1};
     double refraction_ratio = rec->front_face ? (1.0/mat->ir) : mat->ir;
     vec3 unit_dir = vec3_unit(&r->dir);
 
@@ -101,13 +106,12 @@ int material_dielectric_scatter(material_dielectric* mat, ray*r, hit_record* rec
     }
 
     *scattered = (ray){rec->p, direction};
+    *attenuation = (color){1,1,1};
     return 1;
 }
 
 
-
-
-
+///Generic scatter material
 int material_scatter(material* mat, ray* r, hit_record* rec, color* attenuation, ray* scattered){
     if(mat->type == MATERIAL_LAMBERTIAN){
         return material_lambertian_scatter((material_lambertian*)mat->mat, r, rec, attenuation, scattered);
