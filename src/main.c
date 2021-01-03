@@ -67,52 +67,72 @@ color ray_color(ray* r, hittable_list* world, int recursion_depth){
 
 
 
-
 ///Setup all the objects in the scene
 hittable_list* setup_scene(){
     //Create the world container
     hittable_list* world = hittable_list_new(1024);
 
+    texture* ground_texture1 = texture_solid_color_init_rgb(0.5, 0.5, 0.5);
+    texture* ground_texture2 = texture_solid_color_init_rgb(0.2, 0.2, 0.2);
+    texture* ground_texture = texture_checker_init(ground_texture1, ground_texture2);
+    texture* ball_texture = texture_solid_color_init_rgb(0.4, 0.2, 0.1);
+
     //Add the ground object
-    material* material_ground = material_lambertian_new((color){0.5, 0.5, 0.5});
-    hittable_sphere_new(world,  0, -1000, 0, 1000,  (struct material*)material_ground);
+    material* material_ground = material_lambertian_new(ground_texture);
+    hittable* g = hittable_sphere_new(world,  (point3){0, -1000, 0}, 1000,  (struct material*)material_ground);
 
     //Add small random spheres
-    for (int a=-11; a<11; a++){
-        for (int b=-11; b<11; b++){
-            double choose_mat = random_double();
-            point3 center = {a + 0.9*random_double(), 0.2, b + 0.9*random_double()};
-            vec3 p = {4, 0.2, 0};
-            if ( vec3c_length(vec3_sub(&center, &p)) > 0.9){
-                material* sphere_mat;
-                if(choose_mat < 0.8){
-                    //diffuse
-                    color albedo = vec3c_mul(vec3_random() , vec3_random());
-                    sphere_mat = material_lambertian_new(albedo);
-                    hittable_sphere_new(world, center.x, center.y, center.z, 0.2, (struct material*)sphere_mat);
-                }else if(choose_mat < 0.95){
-                    //metal
-                    color albedo = vec3_random_scaled(0.5, 1);
-                    double fuzz = random_double_scaled(0, 0.5);
-                    sphere_mat = material_metal_new(albedo, fuzz);
-                    hittable_sphere_new(world, center.x, center.y, center.z, 0.2, (struct material*)sphere_mat);
-                }else{
-                    //glass
-                    sphere_mat = material_dielectric_new(1.5);
-                    hittable_sphere_new(world, center.x, center.y, center.z, 0.2, (struct material*)sphere_mat);
-                }
-            }
-        }
-    }
+    //for (int a=-11; a<11; a++){
+    //    for (int b=-11; b<11; b++){
+    //        double choose_mat = random_double();
+    //        point3 center = {a + 0.9*random_double(), 0.2, b + 0.9*random_double()};
+    //        vec3 p = {4, 0.2, 0};
+    //        if ( vec3c_length(vec3_sub(&center, &p)) > 0.9){
+    //            material* sphere_mat;
+    //            if(choose_mat < 0.8){
+    //                //diffuse
+    //                color albedo = vec3c_mul(vec3_random() , vec3_random());
+    //                sphere_mat = material_lambertian_new(albedo);
+
+
+    //                point3 center2 = vec3c_sum(center, (vec3){0, random_double_scaled(0, 0.5), 0});
+    //                hittable_moving_sphere_new(world, center, center2, 0.0, 1.0, 0.2, (struct material*)sphere_mat);
+
+    //            }else if(choose_mat < 0.95){
+    //                //metal
+    //                color albedo = vec3_random_scaled(0.5, 1);
+    //                double fuzz = random_double_scaled(0, 0.5);
+    //                sphere_mat = material_metal_new(albedo, fuzz);
+    //                hittable_sphere_new(world, center, 0.2, (struct material*)sphere_mat);
+    //            }else{
+    //                //glass
+    //                sphere_mat = material_dielectric_new(1.5);
+    //                hittable_sphere_new(world, center, 0.2, (struct material*)sphere_mat);
+    //            }
+    //        }
+    //    }
+    //}
 
     //Add 3 big shperes with different materials and return
     material* material1 = material_dielectric_new(1.5);
-    hittable_sphere_new(world, 0, 1, 0, 1.0, (struct material*)material1);
-    material* material2 = material_lambertian_new((color){0.4,0.2,0.1});
-    hittable_sphere_new(world, -4, 1, 0, 1.0, (struct material*)material2);
+    hittable* h1 = hittable_sphere_new(world, (point3){0, 1, 0}, 1.0, (struct material*)material1);
+    material* material2 = material_lambertian_new(ball_texture);
+    hittable* h2 = hittable_sphere_new(world, (point3){-4, 1, 0}, 1.0, (struct material*)material2);
     material* material3 = material_metal_new((color){0.7, 0.6, 0.5}, 0.0);
-    hittable_sphere_new(world,  4, 1, 0, 1.0, (struct material*)material3);
-    return world;
+    hittable* h3 = hittable_sphere_new(world,  (point3){4, 1, 0}, 1.0, (struct material*)material3);
+
+    printf("ground: %p \n", g);
+    printf("palle: %p %p %p\n", h1, h2, h3);
+    printf("world: \n"); for(int i=0;i<world->index;i++){printf("==> world[%i]: %p (pointer at %p)\n", i, world->objs[i], &(world->objs[i]) );}
+
+
+    hittable_list* world2 = hittable_list_new(1024);
+    bvh_node_init(world2, world, 0, 1);
+
+
+    printf("world2: \n"); for(int i=0;i<world2->index;i++){printf("==> world2[%i]: %p (pointer at %p)\n", i, world2->objs[i], &(world2->objs[i]) );}
+
+    return world2;
 }
 
 
@@ -120,6 +140,41 @@ hittable_list* setup_scene(){
 
 
 
+
+
+hittable_list* two_spheres(){
+    hittable_list* world = hittable_list_new(1024);
+    texture* texture1 = texture_solid_color_init_rgb(0.5, 0.5, 0.5);
+    texture* texture2 = texture_solid_color_init_rgb(0.2, 0.2, 0.2);
+    texture* texture = texture_checker_init(texture1, texture2);
+    material* mat1 = material_lambertian_new(texture);
+    hittable* s1 = hittable_sphere_new(world, (point3){0, -10, 0}, 10, (struct material*)mat1);
+    hittable* s2 = hittable_sphere_new(world, (point3){0,  10, 0}, 10, (struct material*)mat1);
+    return world;
+}
+
+
+
+hittable_list* two_perlin_spheres(){
+    hittable_list* world = hittable_list_new(1024);
+
+    texture* pertext = texture_noise_init_scaled(4);
+    material* mat1 = material_lambertian_new(pertext);
+    material* mat2 = material_lambertian_new(pertext);
+    hittable* s1 = hittable_sphere_new(world, (point3){0, -1000, 0}, 1000, (struct material*)mat1);
+    hittable* s2 = hittable_sphere_new(world, (point3){0,  2, 0}, 2, (struct material*)mat1);
+    return world;
+}
+
+
+hittable_list* earth(){
+    hittable_list* world = hittable_list_new(1024);
+
+    texture* earthtexture = texture_image_init("images/earthmap.jpg");
+    material* earthsurface = material_lambertian_new(earthtexture);
+    hittable* globe = hittable_sphere_new(world, (point3){0, 0, 0}, 2, (struct material*)earthsurface);
+    return world;
+}
 
 
 
@@ -138,24 +193,53 @@ int main(int argc, char** argv) {
     char buffer[1024*1024]; // 1 MB buffer
     FILE* outputFile = fopen(outputFilePath, "w+");
 
-    //Define camera
-    const double ASPECT_RATIO = 16.0/9.0;
-    point3 lookfrom = (point3){13, 2,  3};
-    point3 lookat   = (point3){ 0, 0,  0};
-    vec3 vup        = (vec3){0, 1, 0};
-    double dist_to_focus = 10;
-    double aperture = 0.1;
-    camera* c = camera_new(lookfrom, lookat, vup, 30, ASPECT_RATIO, aperture, dist_to_focus);
-
     //Define render target
-    const int IMAGE_WIDTH = 1920;
+    const double ASPECT_RATIO = 16.0/9.0;
+    const int IMAGE_WIDTH = 400;
     const int IMAGE_HEIGHT = (int)(IMAGE_WIDTH / ASPECT_RATIO);
     const int samples_per_pixel = 8; //how many ray per pixel
     const int max_recursion_depth = 8; //how deep the ray scattering goes
 
-    //Define objects list
-    hittable_list* world = setup_scene();
+    //Define camera
+    double vfov = 40;
+    point3 lookfrom;
+    point3 lookat;
+    vec3 vup = (vec3){0, 1, 0};
+    double dist_to_focus = 10;
+    double aperture = 0.0;
 
+    //Define objects list
+    hittable_list* world;
+    switch(0){
+        case 1:
+            world = setup_scene();
+            lookfrom = (point3){13, 2,  3};
+            lookat   = (point3){ 0, 0,  0};
+            aperture = 0.1;
+            break;
+
+        case 2:
+            world = two_spheres();
+            lookfrom = (point3){13, 2,  3};
+            lookat   = (point3){ 0, 0,  0};
+            vfov = 20.0;
+
+        case 3:
+            world = two_perlin_spheres();
+            lookfrom = (point3){13, 2,  3};
+            lookat   = (point3){ 0, 0,  0};
+            vfov = 20.0;
+
+        default:
+        case 4:
+            world = earth();
+            lookfrom = (point3){13, 2,  3};
+            lookat   = (point3){ 0, 0,  0};
+            vfov = 20.0;
+    }
+
+    //Init camera
+    camera* c = camera_new(lookfrom, lookat, vup, vfov, ASPECT_RATIO, aperture, dist_to_focus, 0.0, 1.0);
 
 
     /**

@@ -7,6 +7,7 @@
 #include "vec3.h"
 #include "ray.h"
 #include "hittable.h"
+#include "texture.h"
 
 
 //Generic material struct
@@ -14,7 +15,7 @@ typedef enum{MATERIAL_LAMBERTIAN, MATERIAL_METAL, MATERIAL_DIELECTRIC} material_
 typedef struct{material_type type; void* mat;}material;
 
 //Materials
-typedef struct{color albedo;}material_lambertian;
+typedef struct{texture* albedo;}material_lambertian;
 typedef struct{color albedo; double fuzz;}material_metal;
 typedef struct{double ir;}material_dielectric;
 
@@ -26,13 +27,16 @@ typedef struct{double ir;}material_dielectric;
  */
 
 ///Init Lambertian
-material* material_lambertian_new(color a){
+material* material_lambertian_new(texture* t){
     material* m = malloc(sizeof(material));
     m->type = MATERIAL_LAMBERTIAN;
     material_lambertian* l = malloc(sizeof(material_lambertian));
-    l->albedo = a;
+    l->albedo = t;
     m->mat = l;
-    return m;
+    return m;}
+material* material_lambertian_new_from_color(color c){
+    texture* t = texture_solid_color_init(c);
+    return material_lambertian_new(t);
 }
 
 ///Init metal
@@ -68,8 +72,8 @@ int material_lambertian_scatter(material_lambertian* mat, ray*r, hit_record* rec
     vec3 scatter_direction = vec3c_sum(rec->normal, vec3_random_unit_vector_in_unit_sphere());
     //Check for near zero scattered directions
     if (vec3_is_near_zero(&scatter_direction)){scatter_direction = rec->normal;}
-    *scattered = (ray){rec->p, scatter_direction};
-    *attenuation = mat->albedo;
+    *scattered = (ray){rec->p, scatter_direction, r->time};
+    *attenuation = texture_value(mat->albedo, rec->u, rec->v, &rec->p);
     return 1;
 }
 
@@ -80,7 +84,7 @@ int material_metal_scatter(material_metal* mat, ray*r, hit_record* rec, color* a
     vec3 reflected = vec3c_reflect(vec3_unit(&r->dir), rec->normal);
     //Randomize it with fuzz
     vec3 scattered_direction = vec3c_sum(reflected, vec3c_mul_k(vec3_random_in_unit_sphere(), mat->fuzz));
-    *scattered = (ray){rec->p, scattered_direction};
+    *scattered = (ray){rec->p, scattered_direction, r->time};
     *attenuation = mat->albedo;
     double a = vec3_dot(&scattered->dir, &rec->normal);
     return a > 0;
@@ -105,7 +109,7 @@ int material_dielectric_scatter(material_dielectric* mat, ray*r, hit_record* rec
         direction = vec3c_refract(unit_dir, rec->normal, refraction_ratio);
     }
 
-    *scattered = (ray){rec->p, direction};
+    *scattered = (ray){rec->p, direction, r->time};
     *attenuation = (color){1,1,1};
     return 1;
 }

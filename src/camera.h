@@ -19,15 +19,14 @@ typedef struct {
     point3 lower_left_corner;
     vec3 horizontal;
     vec3 vertical;
-    vec3 u;
-    vec3 v;
-    vec3 w;
+    vec3 u, v, w;
     double lens_radius;
+    double time0, time1;
 }camera;
 
 
 ///Initialize the camera object
-camera* camera_new(point3 lookfrom, point3 lookat, vec3 vup, double vfov, double aspect_ratio, double aperture, double focus_dist){
+camera* camera_new(point3 lookfrom, point3 lookat, vec3 vup, double vfov, double aspect_ratio, double aperture, double focus_dist, double time0, double time1){
     ///Alloc memory
     camera* c = malloc(sizeof(camera));
 
@@ -44,12 +43,6 @@ camera* camera_new(point3 lookfrom, point3 lookat, vec3 vup, double vfov, double
     double viewport_height = 2.0*h;
     double viewport_width = aspect_ratio * viewport_height;
 
-
-    /*
-    ** NOTE:
-    ** W,U,V are all unit vectors parallel and perpendicular to the camera plane
-     */
-
     //Setup camera plane
     c->w = vec3c_unit(vec3_sub(&lookfrom, &lookat));
     c->u = vec3c_unit(vec3_cross(&vup, &c->w));
@@ -63,6 +56,8 @@ camera* camera_new(point3 lookfrom, point3 lookat, vec3 vup, double vfov, double
 
     //Setup focus
     c->lens_radius = aperture / 2.0;
+    c->time0 = time0;
+    c->time1 = time1;
     return c;
 }
 
@@ -78,7 +73,7 @@ ray camera_get_ray(camera* c, double s, double t){
     vec3 dir = vec3c_sub(vec3c_sum(vec3c_sum(c->lower_left_corner, vec3_mul_k(&c->horizontal, s)), vec3_mul_k(&c->vertical, t)), c->origin);
     dir = vec3_sub(&dir, &offset);
     vec3 orig = vec3_sum(&c->origin, &offset);
-    return (ray){orig, dir};
+    return (ray){orig, dir, random_double_scaled(c->time0, c->time1)};
 }
 
 

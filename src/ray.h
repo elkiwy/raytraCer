@@ -14,7 +14,7 @@
  * */
 
 ///Ray structure
-typedef struct{point3 orig; vec3 dir;} ray;
+typedef struct{point3 orig; vec3 dir; double time;} ray;
 
 ///Move the origin point through the ray for T distance
 inline static point3 ray_at(ray* r, double t){

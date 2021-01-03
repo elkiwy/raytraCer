@@ -6,6 +6,8 @@
 #include "vec3.h"
 #include "ray.h"
 #include "hittable.h"
+#include "aabb.h"
+
 
 
 /**
@@ -49,6 +51,25 @@ int hittable_list_hit(hittable_list* l, ray* r, double tmin, double tmax, hit_re
         }
     }
     return hit_anything;
+}
+
+
+
+int hittable_list_bounding_box(hittable_list* l, double t0, double t1, aabb* output_box){
+    if (l->index == 0){return 0;}
+
+    aabb temp_box;
+    int first_box = 1;
+
+    for (int i=0;i<l->index;++i){
+        hittable* o = l->objs[i];
+        //Check if everything is alright
+        if (hittable_bounding_box(o, t0, t1, &temp_box) == 0){return 0;}
+        *output_box = temp_box;
+        first_box = 0;
+    }
+
+    return 1;
 }
 
 
