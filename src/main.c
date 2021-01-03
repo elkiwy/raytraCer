@@ -36,32 +36,24 @@ void write_color(FILE* f, color* pixel_color, int samples_per_pixel){
 
 
 ///Cast a ray into the world and retrieve the color of that ray
-color ray_color(ray* r, hittable_list* world, int recursion_depth){
+color ray_color(ray* r, color* background, hittable_list* world, int recursion_depth){
     //Base case of recursion
     if (recursion_depth <= 0){return (color){0,0,0};}
 
     //If the ray hits anything, take the color of the object
     hit_record rec;
-    if (hittable_list_hit(world, r, 0.001, HUGE_VAL, &rec)){
-        //Check if the thing the ray hit scatter the ray somewhere else or absorbs the ray
-        ray scattered;
-        color attenuation;
-        if (material_scatter((material*)rec.mat, r, &rec, &attenuation, &scattered)){
-            //Recursively take the color of the scattered ray and multiply its color by the attenuation color
-            color scattered_ray_color = ray_color(&scattered, world, recursion_depth-1);
-            return vec3_mul(&attenuation, &scattered_ray_color);
-        }else{
-            //Ray got absorbed by the material
-            return (color){0,0,0};
-        }
-    }
+    if (hittable_list_hit(world, r, 0.001, HUGE_VAL, &rec) == 0){return *background;}
 
-    //Else draw a pixel of the background white/cyan gradient
-    color white = {1,1,1};
-    color cyan = {0.5, 0.7, 1.0};
-    vec3 unit_dir = vec3_unit(&r->dir);
-    double t = 0.5 * (unit_dir.y + 1.0);
-    return vec3c_sum(vec3_mul_k(&white, (1.0 - t)), vec3_mul_k(&cyan, t));
+    //Check if the thing the ray hit scatter the ray somewhere else or absorbs the ray
+    ray scattered;
+    color attenuation;
+    color emitted = material_emitted((material*)rec.mat, rec.u, rec.v, rec.p);
+
+    if (material_scatter((material*)rec.mat, r, &rec, &attenuation, &scattered) == 0){return emitted;}
+
+    //Recursively take the color of the scattered ray and multiply its color by the attenuation color
+    color scattered_ray_color = ray_color(&scattered, background, world, recursion_depth-1);
+    return vec3c_sum(emitted, vec3_mul(&attenuation, &scattered_ray_color));
 }
 
 
@@ -178,6 +170,46 @@ hittable_list* earth(){
 
 
 
+hittable_list* simple_light(){
+    hittable_list* world = hittable_list_new(1024);
+
+    texture* pertext = texture_noise_init_scaled(4);
+    material* mat1 = material_lambertian_new(pertext);
+    hittable* s1 = hittable_sphere_new(world, (point3){0, -1000, 0}, 1000, (struct material*)mat1);
+    hittable* s2 = hittable_sphere_new(world, (point3){0,  2, 0}, 2, (struct material*)mat1);
+
+    material* difflight = material_light_new_from_color((color){4,4,4});
+    hittable* l1 = hittable_xy_rect_new(world, 3, 5, 1, 3, -2, (struct material*)difflight);
+
+    return world;
+}
+
+
+
+hittable_list* cornell_box(){
+    hittable_list* world = hittable_list_new(1024);
+
+    material* red = material_lambertian_new_from_color((color){0.65, 0.05, 0.05});
+    material* whi = material_lambertian_new_from_color((color){0.73, 0.73, 0.73});
+    material* gre = material_lambertian_new_from_color((color){0.12, 0.45, 0.15});
+    material* lig = material_light_new_from_color((color){15,15,15});
+
+
+    hittable* b1 = hittable_yz_rect_new(world, 0, 555, 0, 555, 555, (struct material*)gre);
+    hittable* b2 = hittable_yz_rect_new(world, 0, 555, 0, 555, 0, (struct material*)red);
+
+    hittable* b3 = hittable_xz_rect_new(world, 213, 343, 227, 332, 554, (struct material*)lig);
+    hittable* b4 = hittable_xz_rect_new(world, 0, 555, 0, 555, 0, (struct material*)whi);
+    hittable* b5 = hittable_xz_rect_new(world, 0, 555, 0, 555, 555, (struct material*)whi);
+
+    hittable* b6 = hittable_xy_rect_new(world, 0, 555, 0, 555, 555, (struct material*)whi);
+    return world;
+}
+
+
+
+
+
 
 
 
@@ -189,17 +221,13 @@ int main(int argc, char** argv) {
      *
      **/
     //Output file
+    printf("Argc: %d\n", argc);
     char* outputFilePath = argv[1];
     char buffer[1024*1024]; // 1 MB buffer
     FILE* outputFile = fopen(outputFilePath, "w+");
 
     //Define render target
-    const double ASPECT_RATIO = 16.0/9.0;
-    const int IMAGE_WIDTH = 400;
-    const int IMAGE_HEIGHT = (int)(IMAGE_WIDTH / ASPECT_RATIO);
-    const int samples_per_pixel = 8; //how many ray per pixel
-    const int max_recursion_depth = 8; //how deep the ray scattering goes
-
+    double ASPECT_RATIO = 16.0/9.0;
     //Define camera
     double vfov = 40;
     point3 lookfrom;
@@ -207,12 +235,14 @@ int main(int argc, char** argv) {
     vec3 vup = (vec3){0, 1, 0};
     double dist_to_focus = 10;
     double aperture = 0.0;
+    color background = {0,0,0};
 
     //Define objects list
     hittable_list* world;
     switch(0){
         case 1:
             world = setup_scene();
+            background = (color){0.70, 0.80, 1.00};
             lookfrom = (point3){13, 2,  3};
             lookat   = (point3){ 0, 0,  0};
             aperture = 0.1;
@@ -220,25 +250,52 @@ int main(int argc, char** argv) {
 
         case 2:
             world = two_spheres();
+            background = (color){0.70, 0.80, 1.00};
             lookfrom = (point3){13, 2,  3};
             lookat   = (point3){ 0, 0,  0};
             vfov = 20.0;
+            break;
 
         case 3:
             world = two_perlin_spheres();
+            background = (color){0.70, 0.80, 1.00};
             lookfrom = (point3){13, 2,  3};
             lookat   = (point3){ 0, 0,  0};
             vfov = 20.0;
+            break;
 
-        default:
         case 4:
             world = earth();
+            background = (color){0.70, 0.80, 1.00};
             lookfrom = (point3){13, 2,  3};
             lookat   = (point3){ 0, 0,  0};
             vfov = 20.0;
+            break;
+
+        case 5:
+            world = simple_light();
+            background = (color){0.0, 0.0, 0.0};
+            lookfrom = (point3){26, 3, 6};
+            lookat   = (point3){ 0, 2, 0};
+            vfov = 20.0;
+            break;
+
+        default:
+        case 6:
+            world = cornell_box();
+            ASPECT_RATIO = 1.0;
+            background = (color){0.0, 0.0, 0.0};
+            lookfrom = (point3){278, 278, -800};
+            lookat   = (point3){278, 278, 0};
+            vfov = 40.0;
+            break;
     }
 
     //Init camera
+    const int IMAGE_WIDTH = 320;
+    const int IMAGE_HEIGHT = (int)(IMAGE_WIDTH / ASPECT_RATIO);
+    const int samples_per_pixel = 128; //how many ray per pixel
+    const int max_recursion_depth = 8; //how deep the ray scattering goes
     camera* c = camera_new(lookfrom, lookat, vup, vfov, ASPECT_RATIO, aperture, dist_to_focus, 0.0, 1.0);
 
 
@@ -266,7 +323,7 @@ int main(int argc, char** argv) {
                 double u = ((double)i+random_double()) / (double)(IMAGE_WIDTH - 1);
                 double v = ((double)j+random_double()) / (double)(IMAGE_HEIGHT - 1);
                 ray r = camera_get_ray(c, u, v);
-                pixel_color = vec3c_sum(pixel_color, ray_color(&r, world, max_recursion_depth));
+                pixel_color = vec3c_sum(pixel_color, ray_color(&r, &background, world, max_recursion_depth));
             }
 
             //Output the result color into the file

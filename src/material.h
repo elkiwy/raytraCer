@@ -11,13 +11,14 @@
 
 
 //Generic material struct
-typedef enum{MATERIAL_LAMBERTIAN, MATERIAL_METAL, MATERIAL_DIELECTRIC} material_type;
+typedef enum{MATERIAL_LAMBERTIAN, MATERIAL_METAL, MATERIAL_DIELECTRIC, MATERIAL_LIGHT} material_type;
 typedef struct{material_type type; void* mat;}material;
 
 //Materials
 typedef struct{texture* albedo;}material_lambertian;
 typedef struct{color albedo; double fuzz;}material_metal;
 typedef struct{double ir;}material_dielectric;
+typedef struct{texture* emit;}material_light;
 
 
 
@@ -59,6 +60,22 @@ material* material_dielectric_new(double ir){
     m->mat = d;
     return m;
 }
+
+///Init light
+material* material_light_new(texture* t){
+    material* m = malloc(sizeof(material));
+    m->type = MATERIAL_LIGHT;
+    material_light* l = malloc(sizeof(material_light));
+    l->emit = t;
+    m->mat = l;
+    return m;}
+material* material_light_new_from_color(color c){
+    texture* t = texture_solid_color_init(c);
+    return material_light_new(t);
+}
+
+
+
 
 
 
@@ -115,6 +132,13 @@ int material_dielectric_scatter(material_dielectric* mat, ray*r, hit_record* rec
 }
 
 
+
+///Scatter a light
+int material_light_scatter(){
+    return 0;
+}
+
+
 ///Generic scatter material
 int material_scatter(material* mat, ray* r, hit_record* rec, color* attenuation, ray* scattered){
     if(mat->type == MATERIAL_LAMBERTIAN){
@@ -123,7 +147,32 @@ int material_scatter(material* mat, ray* r, hit_record* rec, color* attenuation,
         return material_dielectric_scatter((material_dielectric*)mat->mat, r, rec, attenuation, scattered);
     }else if(mat->type == MATERIAL_METAL){
         return material_metal_scatter((material_metal*)mat->mat, r, rec, attenuation, scattered);
+    }else if(mat->type == MATERIAL_LIGHT){
+        return material_light_scatter();
     }else{printf("material_scatter nor implemented for material type %d\n", mat->type); return 0;}
+}
+
+
+
+
+
+
+
+/**
+ * Material Scattering
+ */
+
+color material_light_emitted(material_light* light, double u, double v, point3 p){
+    return texture_value(light->emit, u, v, &p);
+}
+
+
+color material_emitted(material* mat, double u, double v, point3 p){
+    //Return the emitted color
+    if(mat->type == MATERIAL_LIGHT){
+        return material_light_emitted((material_light*)mat->mat, u, v, p);
+    //Else is not emmitting
+    }else{return (color){0,0,0};}
 }
 
 

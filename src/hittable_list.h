@@ -39,7 +39,7 @@ int hittable_list_hit(hittable_list* l, ray* r, double tmin, double tmax, hit_re
     double closest_so_far = tmax;
 
     //Test all the object between tmin and the current closest hit so far
-    for (int i=0;i<l->index;++i){
+    for (int i=0; i<l->index; ++i){
         hittable* o = l->objs[i];
         if (hittable_hit(o, r, tmin, closest_so_far, &temp_rec)){
             //Save the hit

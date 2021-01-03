@@ -31,7 +31,7 @@ typedef struct{
 
 /** Hittables */
 //Generic hittable object
-typedef enum {HITTABLE_BVH_NODE, HITTABLE_SPHERE, HITTABLE_MOVING_SPHERE} hittable_type;
+typedef enum {HITTABLE_BVH_NODE, HITTABLE_SPHERE, HITTABLE_MOVING_SPHERE, HITTABLE_XYRECT, HITTABLE_XZRECT, HITTABLE_YZRECT} hittable_type;
 typedef struct{hittable_type t; void* obj;}hittable;
 
 //Specific hittable sphere object (always stored inside hittable)
@@ -40,6 +40,12 @@ typedef struct{
     double r;
     struct material* mat;
 }sphere;
+
+
+typedef struct{struct material* mat; double x0, x1, y0, y1, k;}xy_rect;
+typedef struct{struct material* mat; double x0, x1, z0, z1, k;}xz_rect;
+typedef struct{struct material* mat; double y0, y1, z0, z1, k;}yz_rect;
+
 
 //Specific hittable sphere object (always stored inside hittable)
 typedef struct{
@@ -147,12 +153,48 @@ point3 moving_sphere_center(moving_sphere* s, double t){
 
 
 
-
-
-
-
-
-
+hittable* hittable_xy_rect_new(hittable_list* world, double x0, double x1, double y0, double y1, double k, struct material* mat){
+    hittable* o = malloc(sizeof(hittable));
+    o->t = HITTABLE_XYRECT;
+    xy_rect* r = malloc(sizeof(xy_rect));
+    r->x0 = x0; r->x1 = x1;
+    r->y0 = y0; r->y1 = y1;
+    r->k = k;
+    r->mat = mat;
+    o->obj = r;
+    //Add it to our world
+    world->objs[world->index] = o;
+    world->index++;
+    return o;
+}
+hittable* hittable_xz_rect_new(hittable_list* world, double x0, double x1, double z0, double z1, double k, struct material* mat){
+    hittable* o = malloc(sizeof(hittable));
+    o->t = HITTABLE_XZRECT;
+    xz_rect* r = malloc(sizeof(xz_rect));
+    r->x0 = x0; r->x1 = x1;
+    r->z0 = z0; r->z1 = z1;
+    r->k = k;
+    r->mat = mat;
+    o->obj = r;
+    //Add it to our world
+    world->objs[world->index] = o;
+    world->index++;
+    return o;
+}
+hittable* hittable_yz_rect_new(hittable_list* world, double y0, double y1, double z0, double z1, double k, struct material* mat){
+    hittable* o = malloc(sizeof(hittable));
+    o->t = HITTABLE_YZRECT;
+    yz_rect* r = malloc(sizeof(yz_rect));
+    r->y0 = y0; r->y1 = y1;
+    r->z0 = z0; r->z1 = z1;
+    r->k = k;
+    r->mat = mat;
+    o->obj = r;
+    //Add it to our world
+    world->objs[world->index] = o;
+    world->index++;
+    return o;
+}
 
 
 
@@ -284,6 +326,12 @@ void hittable_free(hittable* o){
         bvh_node* n = o->obj;
         free(n);
         free(o);
+    }else if(o->t == HITTABLE_XYRECT){
+        xy_rect* r = o->obj; free(r); free(o);
+    }else if(o->t == HITTABLE_XZRECT){
+        xz_rect* r = o->obj; free(r); free(o);
+    }else if(o->t == HITTABLE_YZRECT){
+        yz_rect* r = o->obj; free(r); free(o);
     }else{printf("!! Not implemented hittable_free for type %d\n", o->t);}
 }
 
@@ -394,6 +442,54 @@ int bvh_node_hit(bvh_node* node, ray* r, double tmin, double tmax, hit_record* r
 
 
 
+int xy_rect_hit(xy_rect* rect, ray* r, double tmin, double tmax, hit_record* rec){
+    double t = (rect->k - r->orig.z) / r->dir.z;
+    if (t < tmin || t > tmax){return 0;}
+    double x = r->orig.x + t * r->dir.x;
+    double y = r->orig.y + t * r->dir.y;
+    if (x < rect->x0 || x> rect->x1 || y < rect->y0 || y > rect->y1){return 0;}
+    rec->u = (x - rect->x0)/(rect->x1 - rect->x0);
+    rec->v = (y - rect->y0)/(rect->y1 - rect->y0);
+    rec->t = t;
+    vec3 outward_normal = {0,0,1};
+    hit_record_set_facenormal(rec, r, &outward_normal);
+    rec->mat = rect->mat;
+    rec->p = ray_at(r, t);
+    return 1;
+}
+int xz_rect_hit(xz_rect* rect, ray* r, double tmin, double tmax, hit_record* rec){
+    double t = (rect->k - r->orig.y) / r->dir.y;
+    if (t < tmin || t > tmax){return 0;}
+    double x = r->orig.x + t * r->dir.x;
+    double z = r->orig.z + t * r->dir.z;
+    if (x < rect->x0 || x> rect->x1 || z < rect->z0 || z > rect->z1){return 0;}
+    rec->u = (x - rect->x0)/(rect->x1 - rect->x0);
+    rec->v = (z - rect->z0)/(rect->z1 - rect->z0);
+    rec->t = t;
+    vec3 outward_normal = {0,1,0};
+    hit_record_set_facenormal(rec, r, &outward_normal);
+    rec->mat = rect->mat;
+    rec->p = ray_at(r, t);
+    return 1;
+}
+int yz_rect_hit(yz_rect* rect, ray* r, double tmin, double tmax, hit_record* rec){
+    double t = (rect->k - r->orig.x) / r->dir.x;
+    if (t < tmin || t > tmax){return 0;}
+    double y = r->orig.y + t * r->dir.y;
+    double z = r->orig.z + t * r->dir.z;
+    if (z < rect->z0 || z> rect->z1 || y < rect->y0 || y > rect->y1){return 0;}
+    rec->u = (y - rect->y0)/(rect->y1 - rect->y0);
+    rec->v = (z - rect->z0)/(rect->z1 - rect->z0);
+    rec->t = t;
+    vec3 outward_normal = {1,0,0};
+    hit_record_set_facenormal(rec, r, &outward_normal);
+    rec->mat = rect->mat;
+    rec->p = ray_at(r, t);
+    return 1;
+}
+
+
+
 
 ///Generic function to test for ray hit
 int hittable_hit(hittable* o, ray* r, double tmin, double tmax, hit_record* rec){
@@ -403,6 +499,12 @@ int hittable_hit(hittable* o, ray* r, double tmin, double tmax, hit_record* rec)
         return moving_sphere_hit((moving_sphere*)o->obj, r, tmin, tmax, rec);
     }else if (o->t == HITTABLE_BVH_NODE){
         return bvh_node_hit((bvh_node*)o->obj, r, tmin, tmax, rec);
+    }else if (o->t == HITTABLE_XYRECT){
+        return xy_rect_hit((xy_rect*)o->obj, r, tmin, tmax, rec);
+    }else if (o->t == HITTABLE_XZRECT){
+        return xz_rect_hit((xz_rect*)o->obj, r, tmin, tmax, rec);
+    }else if (o->t == HITTABLE_YZRECT){
+        return yz_rect_hit((yz_rect*)o->obj, r, tmin, tmax, rec);
     }else{printf("!! Not implemented hittable_hit for type %d\n", o->t);return 0;}
 }
 
@@ -417,7 +519,7 @@ int hittable_hit(hittable* o, ray* r, double tmin, double tmax, hit_record* rec)
  * */
 
 
-int sphere_bounding_box(sphere* s, double t0, double t1, aabb* output_box){
+int sphere_bounding_box(sphere* s, aabb* output_box){
     output_box->minimum = vec3c_sub(s->center, (vec3){s->r,s->r,s->r});
     output_box->maximum = vec3c_sum(s->center, (vec3){s->r,s->r,s->r});
     return 1;
@@ -436,23 +538,43 @@ int moving_sphere_bounding_box(moving_sphere* s, double t0, double t1, aabb* out
 
 
 
-int bvh_node_bounding_box(bvh_node* node, double t0, double t1, aabb* output_box){
+int bvh_node_bounding_box(bvh_node* node, aabb* output_box){
     *output_box = node->box;
     return 1;
 }
 
+
+int xy_rect_bounding_box(xy_rect* rect, aabb* output_box){
+    point3 a = {rect->x0, rect->y0, rect->k-0.0001};
+    point3 b = {rect->x1, rect->y1, rect->k+0.0001};
+    *output_box = (aabb){a, b};
+    return 1;}
+int xz_rect_bounding_box(xz_rect* rect, aabb* output_box){
+    point3 a = {rect->x0, rect->k-0.0001, rect->z0};
+    point3 b = {rect->x1, rect->k+0.0001, rect->z1};
+    *output_box = (aabb){a, b};
+    return 1;}
+int yz_rect_bounding_box(yz_rect* rect, aabb* output_box){
+    point3 a = {rect->k-0.0001, rect->y0, rect->z0};
+    point3 b = {rect->k+0.0001, rect->y1, rect->z1};
+    *output_box = (aabb){a, b};
+    return 1;}
+
+
 ///Generic function to test for ray hit
 int hittable_bounding_box(hittable* o, double t0, double t1, aabb* output_box){
-    //printf("Bounding box of %p (parent: %p)\n", o->obj, o);fflush(stdout);
     if (o->t == HITTABLE_SPHERE){
-        //printf("sphere\n");fflush(stdout);
-        return sphere_bounding_box((sphere*)o->obj, t0, t1, output_box);
+        return sphere_bounding_box((sphere*)o->obj, output_box);
     }else if (o->t == HITTABLE_MOVING_SPHERE){
-        //printf("moving\n");fflush(stdout);
         return moving_sphere_bounding_box((moving_sphere*)o->obj, t0, t1, output_box);
     }else if (o->t == HITTABLE_BVH_NODE){
-        //printf("BVH\n");fflush(stdout);
-        return bvh_node_bounding_box((bvh_node*)o->obj, t0, t1, output_box);
+        return bvh_node_bounding_box((bvh_node*)o->obj, output_box);
+    }else if (o->t == HITTABLE_XYRECT){
+        return xy_rect_bounding_box((xy_rect*)o->obj, output_box);
+    }else if (o->t == HITTABLE_XZRECT){
+        return xz_rect_bounding_box((xz_rect*)o->obj, output_box);
+    }else if (o->t == HITTABLE_YZRECT){
+        return yz_rect_bounding_box((yz_rect*)o->obj, output_box);
     }else{printf("!! Not implemented hittable_hit for type %d\n", o->t);return 0;}
 }
 

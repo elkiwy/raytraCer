@@ -146,7 +146,7 @@ void texture_free(texture* t){
 
 color texture_value(texture* t, double u, double v, vec3* p);
 
-color solid_color_value(solid_color* sc, double u, double v, vec3* p){
+color solid_color_value(solid_color* sc){
     return sc->color_value;
 }
 
@@ -155,7 +155,7 @@ color checker_value(checker* sc, double u, double v, vec3* p){
     return (sines < 0) ? texture_value(sc->odd, u, v, p) : texture_value(sc->even, u, v, p);
 }
 
-color noise_texture_value(texture_noise* tn, double u, double v, vec3* p){
+color noise_texture_value(texture_noise* tn, vec3* p){
     //double perl = perlin_turb(tn->noise, vec3_mul_k(p, tn->scale));
     double perl = perlin_turb(tn->noise, *p);
     double val = 0.5 * (1.0 + sin(tn->scale*p->z + 10 * perl));
@@ -163,7 +163,7 @@ color noise_texture_value(texture_noise* tn, double u, double v, vec3* p){
 }
 
 
-color image_texture_value(texture_image* img, double u, double v, vec3* p){
+color image_texture_value(texture_image* img, double u, double v){
     if(!img->data){return (color){1,0,1};}
 
     u = clamp(u, 0.0, 1.0);
@@ -186,13 +186,13 @@ color image_texture_value(texture_image* img, double u, double v, vec3* p){
 
 color texture_value(texture* t, double u, double v, vec3* p){
     if (t->type == TEXTURE_SOLID){
-        return solid_color_value((solid_color*)t->o, u, v, p);
+        return solid_color_value((solid_color*)t->o);
     }else if (t->type == TEXTURE_CHECKER){
         return checker_value((checker*)t->o, u, v, p);
     }else if (t->type == TEXTURE_NOISE){
-        return noise_texture_value((texture_noise*)t->o, u, v, p);
+        return noise_texture_value((texture_noise*)t->o, p);
     }else if (t->type == TEXTURE_IMAGE){
-        return image_texture_value((texture_image*)t->o, u, v, p);
+        return image_texture_value((texture_image*)t->o, u, v);
     }else{printf("texture_value not implemented for type %d\n", t->type);fflush(stdout); return (color){0,0,0};}
 }
 
