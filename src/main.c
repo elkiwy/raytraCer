@@ -293,7 +293,7 @@ hittable_list* final_scene(){
 
 
 
-    hittable* boundary = hittable_sphere_new(objects, (point3){360,150,145}, 70, (struct material *)material_dielectric_new(1.5));
+    hittable* boundary = hittable_sphere_new(NULL, (point3){360,150,145}, 70, (struct material *)material_dielectric_new(1.5));
     hittable_constant_medium_init_c(objects, boundary, 0.2, (color){0.2,0.4,0.9});
 
     boundary = hittable_sphere_new(NULL, (point3){0,0,0}, 5000, (struct material *)material_dielectric_new(1.5));
