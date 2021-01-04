@@ -13,7 +13,7 @@
 
 
 // Constants
-const double PI = 3.1415926535897932385;
+#define PI 3.1415926535897932385
 
 // Utility Functions
 inline static double deg2rad(double deg) {return deg * PI / 180.0;}

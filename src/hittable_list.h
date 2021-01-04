@@ -5,8 +5,8 @@
 
 #include "vec3.h"
 #include "ray.h"
-#include "hittable.h"
 #include "aabb.h"
+#include "hittable.h"
 
 
 
@@ -15,6 +15,17 @@
  * Hittable list
  *
  * */
+
+
+/** Hittable list (world) */
+//Container of all the hittable objects
+typedef struct hittable_list{
+    struct hittable** objs;
+    int index;
+    int size;
+}hittable_list;
+
+
 
 ///Initialize the list object
 hittable_list* hittable_list_new(int max_size){
@@ -31,6 +42,18 @@ void hittable_list_free(hittable_list* l){
     free(l->objs);
     free(l);
 }
+
+
+void hittable_list_add(hittable_list* l, hittable* o){
+    if (l==NULL){return;}
+    l->objs[l->index] = o;
+    l->index++;
+}
+
+int hittable_list_index(hittable_list* l){return l->index;}
+void* hittable_list_objects(hittable_list* l){return (void*)l->objs;}
+
+
 
 ///Test a ray to see if it hits any of the objects in the list, and return the hit_record nearest the origin of the camera
 int hittable_list_hit(hittable_list* l, ray* r, double tmin, double tmax, hit_record* rec){
@@ -52,7 +75,6 @@ int hittable_list_hit(hittable_list* l, ray* r, double tmin, double tmax, hit_re
     }
     return hit_anything;
 }
-
 
 
 int hittable_list_bounding_box(hittable_list* l, double t0, double t1, aabb* output_box){

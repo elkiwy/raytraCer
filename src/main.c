@@ -203,9 +203,121 @@ hittable_list* cornell_box(){
     hittable* b5 = hittable_xz_rect_new(world, 0, 555, 0, 555, 555, (struct material*)whi);
 
     hittable* b6 = hittable_xy_rect_new(world, 0, 555, 0, 555, 555, (struct material*)whi);
+
+
+
+    hittable* box1 = hittable_box_new(NULL, (point3){0,0,0}, (point3){165,330,165}, (struct material*)whi);
+    box1 = hittable_rotate_y_init(NULL, box1, 15);
+    box1 = hittable_translate_init(world, box1, (vec3){265, 0, 295});
+
+    hittable* box2 = hittable_box_new(NULL, (point3){0,0,0}, (point3){165,165,165}, (struct material*)whi);
+    box2 = hittable_rotate_y_init(NULL, box2, -18);
+    box2 = hittable_translate_init(world, box2, (vec3){130, 0, 65});
+
     return world;
 }
 
+
+
+hittable_list* cornell_smoke(){
+    hittable_list* world = hittable_list_new(1024);
+
+    material* red = material_lambertian_new_from_color((color){0.65, 0.05, 0.05});
+    material* whi = material_lambertian_new_from_color((color){0.73, 0.73, 0.73});
+    material* gre = material_lambertian_new_from_color((color){0.12, 0.45, 0.15});
+    material* lig = material_light_new_from_color((color){15,15,15});
+
+
+    hittable* b1 = hittable_yz_rect_new(world, 0, 555, 0, 555, 555, (struct material*)gre);
+    hittable* b2 = hittable_yz_rect_new(world, 0, 555, 0, 555, 0, (struct material*)red);
+    hittable* b3 = hittable_xz_rect_new(world, 213, 343, 227, 332, 554, (struct material*)lig);
+    hittable* b4 = hittable_xz_rect_new(world, 0, 555, 0, 555, 0, (struct material*)whi);
+    hittable* b5 = hittable_xz_rect_new(world, 0, 555, 0, 555, 555, (struct material*)whi);
+    hittable* b6 = hittable_xy_rect_new(world, 0, 555, 0, 555, 555, (struct material*)whi);
+
+
+
+    hittable* box1 = hittable_box_new(NULL, (point3){0,0,0}, (point3){165,330,165}, (struct material*)whi);
+    box1 = hittable_rotate_y_init(NULL, box1, 15);
+    box1 = hittable_translate_init(NULL, box1, (vec3){265, 0, 295});
+    box1 = hittable_constant_medium_init_c(world, box1, 0.01, (color){0,0,0});
+
+    hittable* box2 = hittable_box_new(NULL, (point3){0,0,0}, (point3){165,165,165}, (struct material*)whi);
+    box2 = hittable_rotate_y_init(NULL, box2, -18);
+    box2 = hittable_translate_init(NULL, box2, (vec3){130, 0, 65});
+    box2 = hittable_constant_medium_init_c(world, box2, 0.01, (color){1,1,1});
+
+    return world;
+}
+
+
+
+hittable_list* final_scene(){
+    hittable_list* boxes1 = hittable_list_new(1024);
+    material* ground = material_lambertian_new_from_color((color){0.48,0.83,0.53});
+
+    const int boxes_per_side = 20;
+    for (int i = 0; i < boxes_per_side; i++) {
+        for (int j = 0; j < boxes_per_side; j++) {
+            double w = 100.0;
+            double x0 = -1000.0 + i*w;
+            double z0 = -1000.0 + j*w;
+            double y0 = 0.0;
+            double x1 = x0 + w;
+            double y1 = random_double_scaled(1,101);
+            double z1 = z0 + w;
+
+            hittable_box_new(boxes1, (point3){x0,y0,z0}, (point3){x1,y1,z1}, (struct material*)ground);
+        }
+    }
+
+
+    hittable_list* objects = hittable_list_new(1024);
+    bvh_node_init(objects, boxes1, 0, 1);
+
+
+    material* light = material_light_new_from_color((color){7,7,7});
+    hittable* b3 = hittable_xz_rect_new(objects, 123, 423, 147, 412, 554, (struct material*)light);
+
+
+    point3 center1 = (point3){400, 400, 200};
+    point3 center2 = vec3c_sum(center1, (vec3){30,0,0});
+
+    material* moving_sphere_material = material_lambertian_new_from_color((color){0.7,0.3,0.1});
+    hittable_moving_sphere_new(objects, center1, center2, 0, 1, 50, (struct material *)moving_sphere_material);
+
+
+
+    hittable_sphere_new(objects, (point3){260,150,45}, 50, (struct material *)material_dielectric_new(1.5));
+    hittable_sphere_new(objects, (point3){0,150,145}, 50, (struct material *)material_metal_new((color){0.8,0.8,0.8}, 1.0));
+
+
+
+    hittable* boundary = hittable_sphere_new(objects, (point3){360,150,145}, 70, (struct material *)material_dielectric_new(1.5));
+    hittable_constant_medium_init_c(objects, boundary, 0.2, (color){0.2,0.4,0.9});
+
+    boundary = hittable_sphere_new(NULL, (point3){0,0,0}, 5000, (struct material *)material_dielectric_new(1.5));
+    hittable_constant_medium_init_c(objects, boundary, 0.0001, (color){1,1,1});
+
+
+    texture* pertext = texture_noise_init_scaled(0.1);
+    hittable_sphere_new(objects, (point3){220,280,300}, 80, (struct material *)material_lambertian_new(pertext));
+
+
+    hittable_list* boxes2 = hittable_list_new(1024);
+    material* white = material_lambertian_new_from_color((color){0.73, 0.73, 0.73});
+    int ns = 1000;
+    for (int j = 0; j < ns; j++) {
+        hittable_sphere_new(boxes2, vec3_random_scaled(0,165), 10, (struct material *)white);
+    }
+
+    hittable* bvh = bvh_node_init(NULL, boxes2, 0, 1);
+    hittable* rotated = hittable_rotate_y_init(NULL, bvh, 15);
+    hittable* translated = hittable_translate_init(objects, rotated, (vec3){-100, 270, 395});
+
+
+    return objects;
+}
 
 
 
@@ -280,7 +392,6 @@ int main(int argc, char** argv) {
             vfov = 20.0;
             break;
 
-        default:
         case 6:
             world = cornell_box();
             ASPECT_RATIO = 1.0;
@@ -289,12 +400,30 @@ int main(int argc, char** argv) {
             lookat   = (point3){278, 278, 0};
             vfov = 40.0;
             break;
+
+        case 7:
+            world = cornell_smoke();
+            ASPECT_RATIO = 1.0;
+            lookfrom = (point3){278, 278, -800};
+            lookat   = (point3){278, 278, 0};
+            vfov = 40.0;
+            break;
+
+        default:
+        case 8:
+            world = final_scene();
+            ASPECT_RATIO = 1.0;
+            background = (color){0.0, 0.0, 0.0};
+            lookfrom = (point3){478, 278, -600};
+            lookat   = (point3){278, 278, 0};
+            vfov = 40.0;
+            break;
     }
 
     //Init camera
-    const int IMAGE_WIDTH = 320;
+    const int IMAGE_WIDTH = 80;
     const int IMAGE_HEIGHT = (int)(IMAGE_WIDTH / ASPECT_RATIO);
-    const int samples_per_pixel = 128; //how many ray per pixel
+    const int samples_per_pixel = 32; //how many ray per pixel
     const int max_recursion_depth = 8; //how deep the ray scattering goes
     camera* c = camera_new(lookfrom, lookat, vup, vfov, ASPECT_RATIO, aperture, dist_to_focus, 0.0, 1.0);
 
