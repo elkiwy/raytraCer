@@ -57,6 +57,10 @@ texture* texture_image_init(char* filename);
 
 void texture_free(texture* t);
 
+static texture* textures_allocated[1024];
+static int textures_index = 0;
+void textures_free_all();
+
 color texture_value(texture* t, double u, double v, vec3* p);
 
 #endif // __TEXTURE_H_

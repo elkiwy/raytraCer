@@ -13,6 +13,8 @@
 struct hit_record;
 
 
+
+
 //Generic material struct
 typedef enum{MATERIAL_LAMBERTIAN, MATERIAL_METAL, MATERIAL_DIELECTRIC, MATERIAL_LIGHT, MATERIAL_ISOTROPIC} material_type;
 typedef struct{material_type type; void* mat;}material;
@@ -33,6 +35,18 @@ material* material_light_new(texture* t);
 material* material_light_new_from_color(color c);
 material* material_isotropic_new(texture* t);
 material* material_isotropic_new_from_color(color c);
+
+
+
+
+void material_free(material* m);
+static material* materials_allocated[1024];
+static int materials_index = 0;
+void materials_free_all();
+
+
+
+
 
 int material_scatter(material* mat, ray* r, struct hit_record* rec, color* attenuation, ray* scattered);
 

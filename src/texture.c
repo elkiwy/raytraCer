@@ -12,9 +12,18 @@
  *
  * */
 
-texture* texture_solid_color_init(color c){
+
+texture* texture_generic_init(texture_type type){
     texture* t = malloc(sizeof(texture));
-    t->type = TEXTURE_SOLID;
+    t->type = type;
+
+    textures_allocated[textures_index] = t;
+    textures_index++;
+    return t;
+}
+
+texture* texture_solid_color_init(color c){
+    texture* t = texture_generic_init(TEXTURE_SOLID);
     solid_color* sc = malloc(sizeof(solid_color));
     sc->color_value = c;
     t->o = sc;
@@ -26,8 +35,7 @@ texture* texture_solid_color_init_rgb(double r, double g, double b){
 
 
 texture* texture_checker_init(texture* odd, texture* even){
-    texture* t = malloc(sizeof(texture));
-    t->type = TEXTURE_CHECKER;
+    texture* t = texture_generic_init(TEXTURE_CHECKER);
     checker* chk = malloc(sizeof(checker));
     chk->even = even;
     chk->odd = odd;
@@ -42,8 +50,7 @@ texture* texture_checker_init_c(color odd, color even){
 
 
 texture* texture_noise_init_scaled(double sc){
-    texture* t = malloc(sizeof(texture));
-    t->type = TEXTURE_NOISE;
+    texture* t = texture_generic_init(TEXTURE_NOISE);
     texture_noise* n = malloc(sizeof(texture_noise));
     perlin* p = perlin_init();
     n->noise = p;
@@ -58,8 +65,7 @@ texture* texture_noise_init(){
 
 #define BYTES_PER_PIXEL 3
 texture* texture_image_init(char* filename){
-    texture* t = malloc(sizeof(texture));
-    t->type = TEXTURE_IMAGE;
+    texture* t = texture_generic_init(TEXTURE_IMAGE);
     texture_image* i = malloc(sizeof(texture_image));
     int components_per_pixel = BYTES_PER_PIXEL;
     i->data = stbi_load(filename, &i->width, &i->height, &components_per_pixel, components_per_pixel);
@@ -88,10 +94,15 @@ void texture_free(texture* t){
         free(t->o);
         free(t);
     }else if (t->type == TEXTURE_CHECKER){
-        free(t->o);
+        checker* c = t->o;
+        //texture_free(c->even);
+        //texture_free(c->odd);
+        free(c);
         free(t);
     }else if (t->type == TEXTURE_NOISE){
-        free(t->o);
+        texture_noise* n = t->o;
+        perlin_free(n->noise);
+        free(n);
         free(t);
     }else if (t->type == TEXTURE_IMAGE){
         free(((texture_image*)(t->o))->data);
@@ -100,6 +111,13 @@ void texture_free(texture* t){
     }else{printf("texture_free not implemented for type %d\n", t->type);fflush(stdout);}
 }
 
+void textures_free_all(){
+    printf("Freeing %d textures...\n", textures_index);fflush(stdout);
+    for(int i=0;i<textures_index;i++){
+        texture_free(textures_allocated[i]);
+    }
+    printf("Done!\n");fflush(stdout);
+}
 
 
 /**

@@ -7,8 +7,8 @@ SOURCES := $(wildcard $(SRC)/*.c)
 OBJECTS := $(patsubst $(SRC)/%.c, $(OBJ)/%.o, $(SOURCES))
 
 
-FLAGS = -g -Og -Wshadow -Wextra -Werror=implicit-int -Werror=incompatible-pointer-types -Werror=int-conversion
-FLAGS_SANITIZE = -fsanitize=address -fsanitize=undefined
+FLAGS = -g -Og -Wextra -Werror=implicit-int -Werror=incompatible-pointer-types -Werror=int-conversion
+FLAGS_SANITIZE = #-fsanitize=address -fsanitize=undefined
 #LIBS = -L /usr/local/lib -l SDL2-2.0.0 -l SDL2_ttf -l SDL2_image -l SDL2_gfx
 
 LINUX_EXTRA_LIBS=-L/usr/lib/x86_64-linux-gnu -lm

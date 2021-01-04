@@ -223,6 +223,8 @@ hittable* bvh_node_constructor(hittable** src_objects, int src_objects_count, in
     }
     node->box = surrounding_box(box_left, box_right);
 
+    free(objects);
+
     h->obj = node;
     return h;
 }
@@ -265,7 +267,6 @@ hittable* hittable_rotate_y_init(struct hittable_list* world, hittable* obj, dou
     o->t = HITTABLE_ROTATEY;
     rotate_y* rotated = malloc(sizeof(rotate_y));
     rotated->obj = obj;
-
 
     double radians = deg2rad(angle);
     rotated->sin_theta = sin(radians);
@@ -351,47 +352,56 @@ hittable* hittable_constant_medium_init_c(struct hittable_list* world, hittable*
 
 ///Free hittable object
 void hittable_free(hittable* o){
+    //printf("Freeing hittable %p (%d)\n", o, o->t);
     if(o->t == HITTABLE_SPHERE){
         sphere* s = o->obj;
         free(s);
-        free(o);
+
     }else if(o->t == HITTABLE_MOVING_SPHERE){
         moving_sphere* s = o->obj;
         free(s);
-        free(o);
+
     }else if(o->t == HITTABLE_BVH_NODE){
+
         bvh_node* n = o->obj;
+        //printf("Freeing bvh leafs %p %p\n", n->left, n->right);
+
+        if (n->left == n->right){
+            hittable_free(n->left);
+        }else{
+            hittable_free(n->left);
+            hittable_free(n->right);
+        }
         free(n);
-        free(o);
+
     }else if(o->t == HITTABLE_XYRECT){
-        xy_rect* r = o->obj; free(r); free(o);
+        xy_rect* r = o->obj; free(r);
     }else if(o->t == HITTABLE_XZRECT){
-        xz_rect* r = o->obj; free(r); free(o);
+        xz_rect* r = o->obj; free(r);
     }else if(o->t == HITTABLE_YZRECT){
-        yz_rect* r = o->obj; free(r); free(o);
+        yz_rect* r = o->obj; free(r);
 
     }else if(o->t == HITTABLE_BOX){
-        box* r = o->obj; free(r); free(o);
+        box* r = o->obj;
+        free(r);
 
     }else if(o->t == HITTABLE_TRANSLATE){
         translate* r = o->obj;
         hittable_free(r->obj);
         free(r);
-        free(o);
 
     }else if(o->t == HITTABLE_ROTATEY){
         rotate_y* r = o->obj;
         hittable_free(r->obj);
         free(r);
-        free(o);
 
     }else if(o->t == HITTABLE_CONSTANT_MEDIUM){
         constant_medium* m = o->obj;
         hittable_free(m->boundary);
         free(m);
-        free(o);
 
     }else{printf("!! Not implemented hittable_free for type %d\n", o->t);}
+    free(o);
 }
 
 

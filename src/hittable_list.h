@@ -23,24 +23,72 @@ typedef struct hittable_list{
     struct hittable** objs;
     int index;
     int size;
+    int gc;
 }hittable_list;
+
+
+//Free the list object
+void hittable_list_free(hittable_list* l){
+    if(l->gc){for (int i=0;i<l->index;i++){hittable_free(l->objs[i]);}}
+    free(l->objs);
+    free(l);
+}
+
+
+static hittable_list* hittable_lists_allocated[1024];
+static int hittable_lists_index = 0;
+
+static void hittable_lists_free_all(){
+    printf("Freeing %d hittable_lists...\n", hittable_lists_index);fflush(stdout);
+    for(int i=0;i<hittable_lists_index;i++){
+        hittable_list_free(hittable_lists_allocated[i]);
+    }
+    printf("Done!\n");fflush(stdout);
+}
+
+
+
+static void hittable_list_print(hittable_list* h){
+    printf("\nList %p:\n", h);fflush(stdout);
+    for(int i=0;i<h->index;i++){
+        printf(" -> %p (%d)\n", h->objs[i], h->objs[i]->t);fflush(stdout);
+    }
+}
+
+static void hittable_lists_print_all(){
+    for(int i=0;i<hittable_lists_index;i++){
+        hittable_list_print(hittable_lists_allocated[i]);
+    }
+}
+
+
 
 
 
 ///Initialize the list object
+hittable_list* hittable_list_new_no_gc(int max_size){
+    hittable_list* l = malloc(sizeof(hittable_list));
+    l->objs = malloc(sizeof(hittable)*max_size);
+    l->index = 0;
+    l->size = max_size;
+    l->gc = 0;
+
+    hittable_lists_allocated[hittable_lists_index] = l;
+    hittable_lists_index++;
+
+    return l;
+}
+
+
 hittable_list* hittable_list_new(int max_size){
     hittable_list* l = malloc(sizeof(hittable_list));
     l->objs = malloc(sizeof(hittable)*max_size);
     l->index = 0;
     l->size = max_size;
+    l->gc = 1;
+    hittable_lists_allocated[hittable_lists_index] = l;
+    hittable_lists_index++;
     return l;
-}
-
-//Free the list object
-void hittable_list_free(hittable_list* l){
-    for (int i=0;i<l->index;i++){hittable_free(l->objs[i]);}
-    free(l->objs);
-    free(l);
 }
 
 
@@ -93,6 +141,10 @@ int hittable_list_bounding_box(hittable_list* l, double t0, double t1, aabb* out
 
     return 1;
 }
+
+
+
+
 
 
 #endif // __HITTABLE_LIST_H_

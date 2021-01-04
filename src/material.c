@@ -1,13 +1,60 @@
 #include "material.h"
 
+
+
+
+
+
+
+void materials_free_all(){
+    printf("Freeing %d materials...\n", materials_index);fflush(stdout);
+    for(int i=0;i<materials_index;i++){
+        material_free(materials_allocated[i]);
+    }
+    printf("Done!\n");fflush(stdout);
+}
+
+void material_free(material* m){
+    if (m->type == MATERIAL_LAMBERTIAN){
+        material_lambertian* lamb = m->mat;
+        //texture_free(lamb->albedo);
+        free(m->mat);
+    }else if (m->type == MATERIAL_METAL){
+        free(m->mat);
+    }else if (m->type == MATERIAL_DIELECTRIC){
+        free(m->mat);
+    }else if (m->type == MATERIAL_LIGHT){
+        material_light* light = m->mat;
+        //texture_free(light->emit);
+        free(m->mat);
+    }else if (m->type == MATERIAL_ISOTROPIC){
+        material_isotropic* iso = m->mat;
+        //texture_free(iso->albedo);
+        free(m->mat);
+    }
+    free(m);
+}
+
+
+material* material_generic_init(material_type t){
+    material* m = malloc(sizeof(material));
+    m->type = t;
+
+    //Add to allocated array
+    materials_allocated[materials_index] = m;
+    materials_index++;
+    return m;
+}
+
+
 /**
  * Materials Initializations
  */
 
+
 ///Init Lambertian
 material* material_lambertian_new(texture* t){
-    material* m = malloc(sizeof(material));
-    m->type = MATERIAL_LAMBERTIAN;
+    material* m = material_generic_init(MATERIAL_LAMBERTIAN);
     material_lambertian* l = malloc(sizeof(material_lambertian));
     l->albedo = t;
     m->mat = l;
@@ -19,8 +66,7 @@ material* material_lambertian_new_from_color(color c){
 
 ///Init metal
 material* material_metal_new(color a, double fuzz){
-    material* m = malloc(sizeof(material));
-    m->type = MATERIAL_METAL;
+    material* m = material_generic_init(MATERIAL_METAL);
     material_metal* metal = malloc(sizeof(material_metal));
     metal->albedo = a;
     metal->fuzz = fuzz;
@@ -30,8 +76,7 @@ material* material_metal_new(color a, double fuzz){
 
 ///Init dielectric
 material* material_dielectric_new(double ir){
-    material* m = malloc(sizeof(material));
-    m->type = MATERIAL_DIELECTRIC;
+    material* m = material_generic_init(MATERIAL_DIELECTRIC);
     material_dielectric* d = malloc(sizeof(material_dielectric));
     d->ir = ir;
     m->mat = d;
@@ -40,8 +85,7 @@ material* material_dielectric_new(double ir){
 
 ///Init light
 material* material_light_new(texture* t){
-    material* m = malloc(sizeof(material));
-    m->type = MATERIAL_LIGHT;
+    material* m = material_generic_init(MATERIAL_LIGHT);
     material_light* l = malloc(sizeof(material_light));
     l->emit = t;
     m->mat = l;
@@ -54,8 +98,7 @@ material* material_light_new_from_color(color c){
 
 ///Init isotropic
 material* material_isotropic_new(texture* t){
-    material* m = malloc(sizeof(material));
-    m->type = MATERIAL_ISOTROPIC;
+    material* m = material_generic_init(MATERIAL_ISOTROPIC);
     material_isotropic* l = malloc(sizeof(material_isotropic));
     l->albedo = t;
     m->mat = l;

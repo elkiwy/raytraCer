@@ -138,8 +138,8 @@ hittable_list* two_spheres(){
     hittable_list* world = hittable_list_new(1024);
     texture* texture1 = texture_solid_color_init_rgb(0.5, 0.5, 0.5);
     texture* texture2 = texture_solid_color_init_rgb(0.2, 0.2, 0.2);
-    texture* texture = texture_checker_init(texture1, texture2);
-    material* mat1 = material_lambertian_new(texture);
+    texture* tex = texture_checker_init(texture1, texture2);
+    material* mat1 = material_lambertian_new(tex);
     hittable* s1 = hittable_sphere_new(world, (point3){0, -10, 0}, 10, (struct material*)mat1);
     hittable* s2 = hittable_sphere_new(world, (point3){0,  10, 0}, 10, (struct material*)mat1);
     return world;
@@ -253,7 +253,7 @@ hittable_list* cornell_smoke(){
 
 
 hittable_list* final_scene(){
-    hittable_list* boxes1 = hittable_list_new(1024);
+    hittable_list* boxes1 = hittable_list_new_no_gc(1024);
     material* ground = material_lambertian_new_from_color((color){0.48,0.83,0.53});
 
     const int boxes_per_side = 20;
@@ -266,14 +266,20 @@ hittable_list* final_scene(){
             double x1 = x0 + w;
             double y1 = random_double_scaled(1,101);
             double z1 = z0 + w;
-
             hittable_box_new(boxes1, (point3){x0,y0,z0}, (point3){x1,y1,z1}, (struct material*)ground);
+            //hittable_sphere_new(boxes1, (point3){1,1,1}, 10, (struct material *)ground);
         }
     }
 
+    ////printf("ground: %p\n", ground);
+    ////hittable* b1 = hittable_sphere_new(boxes1, (point3){1,1,1}, 10, (struct material *)ground);
+    ////hittable* b2 = hittable_sphere_new(boxes1, (point3){2,2,2}, 10, (struct material *)ground);
+    ////hittable* b3 = hittable_sphere_new(boxes1, (point3){3,3,3}, 10, (struct material *)ground);
+    ////hittable* b4 = hittable_sphere_new(boxes1, (point3){4,4,4}, 10, (struct material *)ground);
+    ////printf("spheres: %p %p %p %p\n", b1, b2, b3, b4);
 
     hittable_list* objects = hittable_list_new(1024);
-    bvh_node_init(objects, boxes1, 0, 1);
+    hittable* node = bvh_node_init(objects, boxes1, 0, 1);
 
 
     material* light = material_light_new_from_color((color){7,7,7});
@@ -301,10 +307,10 @@ hittable_list* final_scene(){
 
 
     texture* pertext = texture_noise_init_scaled(0.1);
-    hittable_sphere_new(objects, (point3){220,280,300}, 80, (struct material *)material_lambertian_new(pertext));
+    hittable* coso = hittable_sphere_new(objects, (point3){220,280,300}, 80, (struct material *)material_lambertian_new(pertext));
 
 
-    hittable_list* boxes2 = hittable_list_new(1024);
+    hittable_list* boxes2 = hittable_list_new_no_gc(1024);
     material* white = material_lambertian_new_from_color((color){0.73, 0.73, 0.73});
     int ns = 1000;
     for (int j = 0; j < ns; j++) {
@@ -315,6 +321,7 @@ hittable_list* final_scene(){
     hittable* rotated = hittable_rotate_y_init(NULL, bvh, 15);
     hittable* translated = hittable_translate_init(objects, rotated, (vec3){-100, 270, 395});
 
+    //hittable_lists_print_all();
 
     return objects;
 }
@@ -351,7 +358,7 @@ int main(int argc, char** argv) {
 
     //Define objects list
     hittable_list* world;
-    switch(0){
+    switch(8){
         case 1:
             world = setup_scene();
             background = (color){0.70, 0.80, 1.00};
@@ -466,7 +473,10 @@ int main(int argc, char** argv) {
 
     //Free memory
     camera_free(c);
-    hittable_list_free(world);
+
+    hittable_lists_free_all();
+    materials_free_all();
+    textures_free_all();
 
     //Exit
     return 0;

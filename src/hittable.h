@@ -3,7 +3,7 @@
 
 
 #include <stdio.h>
-#include <strings.h>
+#include <string.h>
 
 #include "vec3.h"
 #include "ray.h"
