@@ -385,9 +385,9 @@ int main(int argc, char** argv) {
     }
 
     //Init camera
-    const int IMAGE_WIDTH = 1024/2;
+    const int IMAGE_WIDTH = 1024/4;
     const int IMAGE_HEIGHT = (int)(IMAGE_WIDTH / ASPECT_RATIO);
-    const int samples_per_pixel = 1000; //how many ray per pixel
+    const int samples_per_pixel = 32; //how many ray per pixel
     const int max_recursion_depth = 8; //how deep the ray scattering goes
     camera* c = camera_new(lookfrom, lookat, vup, vfov, ASPECT_RATIO, aperture, dist_to_focus, 0.0, 1.0);
 

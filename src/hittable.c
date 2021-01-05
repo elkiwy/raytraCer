@@ -1,5 +1,6 @@
 #include "hittable.h"
 
+#include "hittable_list.h"
 
 
 /**
@@ -25,9 +26,47 @@ void hit_record_print(hit_record* h){
 
 /**
  *
+ * BVH AABB sorting
+ *
+ * */
+
+int hittable_bounding_box(hittable* a, double t0, double t1, aabb* output_box);
+inline static int box_compare(hittable* a, hittable* b, int axis){
+    aabb box_a, box_b;
+    if(!hittable_bounding_box(a, 0, 0, &box_a) || !hittable_bounding_box(b, 0, 0, &box_b)){
+        printf("Failed to get bounding box in bvh_node comparator.\n"); fflush(stdout);
+        return 0;}
+    if (axis==0){       return box_a.minimum.x < box_b.minimum.x;
+    }else if (axis==1){ return box_a.minimum.y < box_b.minimum.y;
+    }else{              return box_a.minimum.z < box_b.minimum.z;}}
+int box_x_compare(const void* a, const void* b){return box_compare(*((hittable**)a), *((hittable**)b), 0);}
+int box_y_compare(const void* a, const void* b){return box_compare(*((hittable**)a), *((hittable**)b), 1);}
+int box_z_compare(const void* a, const void* b){return box_compare(*((hittable**)a), *((hittable**)b), 2);}
+
+
+
+
+
+
+
+/**
+ *
  * Hittable Objects allocators
  *
  * */
+
+
+/**
+ * Objects
+ * */
+
+///Create a generic hittable wrapper object
+hittable* hittable_generic_new(hittable_list* world, hittable_type t, void* obj){
+    hittable* h = malloc(sizeof(hittable));
+    h->t = t; h->obj = obj;
+    hittable_list_add(world, h);
+    return h;
+}
 
 
 ///Create a new sphere object
@@ -38,15 +77,10 @@ hittable* hittable_sphere_new(struct hittable_list* world, point3 center, double
     s->r = r;
     s->mat = mat;
 
-    //Create the hittable generic
-    hittable* o = malloc(sizeof(hittable));
-    o->obj = s;
-    o->t = HITTABLE_SPHERE;
-
-    //Add it to our world
-    hittable_list_add(world, o);
-    return o;
+    //Make generic wrapper and return
+    return hittable_generic_new(world, HITTABLE_SPHERE, s);
 }
+
 
 ///Create a new moving sphere object
 hittable* hittable_moving_sphere_new(struct hittable_list* world, point3 center0, point3 center1, double t0, double t1, double r, struct material* mat){
@@ -59,69 +93,49 @@ hittable* hittable_moving_sphere_new(struct hittable_list* world, point3 center0
     s->r = r;
     s->mat = mat;
 
-    //Create the hittable generic
-    hittable* o = malloc(sizeof(hittable));
-    o->obj = s;
-    o->t = HITTABLE_MOVING_SPHERE;
-
-    //Add it to our world
-    hittable_list_add(world, o);
-    return o;
-}
-
-point3 moving_sphere_center(moving_sphere* s, double t){
-    double k = ((t - s->time0) / (s->time1 - s->time0));
-    return vec3c_sum(vec3c_mul_k(vec3_sub(&s->center1, &s->center0), k), s->center0);
+    //Make generic wrapper and return
+    return hittable_generic_new(world, HITTABLE_MOVING_SPHERE, s);
 }
 
 
-
-
+///Create a XY axis aligned rect
 hittable* hittable_xy_rect_new(struct hittable_list* world, double x0, double x1, double y0, double y1, double k, struct material* mat){
-    hittable* o = malloc(sizeof(hittable));
-    o->t = HITTABLE_XYRECT;
     xy_rect* r = malloc(sizeof(xy_rect));
     r->x0 = x0; r->x1 = x1;
     r->y0 = y0; r->y1 = y1;
     r->k = k;
     r->mat = mat;
-    o->obj = r;
-    //Add it to our world
-    hittable_list_add(world, o);
-    return o;
+    //Make generic wrapper and return
+    return hittable_generic_new(world, HITTABLE_XYRECT, r);
 }
+
+
+///Create a XZ axis aligned rect
 hittable* hittable_xz_rect_new(struct hittable_list* world, double x0, double x1, double z0, double z1, double k, struct material* mat){
-    hittable* o = malloc(sizeof(hittable));
-    o->t = HITTABLE_XZRECT;
     xz_rect* r = malloc(sizeof(xz_rect));
     r->x0 = x0; r->x1 = x1;
     r->z0 = z0; r->z1 = z1;
     r->k = k;
     r->mat = mat;
-    o->obj = r;
-    //Add it to our world
-    hittable_list_add(world, o);
-    return o;
+    //Make generic wrapper and return
+    return hittable_generic_new(world, HITTABLE_XZRECT, r);
 }
+
+
+///Create a YZ axis aligned rect
 hittable* hittable_yz_rect_new(struct hittable_list* world, double y0, double y1, double z0, double z1, double k, struct material* mat){
-    hittable* o = malloc(sizeof(hittable));
-    o->t = HITTABLE_YZRECT;
     yz_rect* r = malloc(sizeof(yz_rect));
     r->y0 = y0; r->y1 = y1;
     r->z0 = z0; r->z1 = z1;
     r->k = k;
     r->mat = mat;
-    o->obj = r;
-    //Add it to our world
-    hittable_list_add(world, o);
-    return o;
+    //Make generic wrapper and return
+    return hittable_generic_new(world, HITTABLE_YZRECT, r);
 }
 
 
-
+///Create a 3d box object
 hittable* hittable_box_new(struct hittable_list* world, point3 min, point3 max, struct material* mat){
-    hittable* o = malloc(sizeof(hittable));
-    o->t = HITTABLE_BOX;
     box* b = malloc(sizeof(box));
     b->box_max = max;
     b->box_min = min;
@@ -130,113 +144,82 @@ hittable* hittable_box_new(struct hittable_list* world, point3 min, point3 max, 
     b->sides = (struct hittable_list*)hittable_list_new(6);
     hittable_xy_rect_new(b->sides, min.x, max.x, min.y, max.y, max.z, mat);
     hittable_xy_rect_new(b->sides, min.x, max.x, min.y, max.y, min.z, mat);
-
     hittable_xz_rect_new(b->sides, min.x, max.x, min.z, max.z, max.y, mat);
     hittable_xz_rect_new(b->sides, min.x, max.x, min.z, max.z, min.y, mat);
-
     hittable_yz_rect_new(b->sides, min.y, max.y, min.z, max.z, max.x, mat);
     hittable_yz_rect_new(b->sides, min.y, max.y, min.z, max.z, min.x, mat);
 
-    o->obj = b;
-
-    //Add it to our world
-    hittable_list_add(world, o);
-    return o;
+    //Make generic wrapper and return
+    return hittable_generic_new(world, HITTABLE_BOX, b);
 }
 
 
+/**
+ * BVH Nodes
+ * */
 
-
-
-
-
-
-
-
-
-int hittable_bounding_box(hittable* a, double t0, double t1, aabb* output_box);
-inline static int box_compare(hittable* a, hittable* b, int axis){
-    aabb box_a, box_b;
-    if(!hittable_bounding_box(a, 0, 0, &box_a) || !hittable_bounding_box(b, 0, 0, &box_b)){
-        printf("Failed to get bounding box in bvh_node comparator.\n"); fflush(stdout);
-        return 0;
-    }
-
-    if (axis==0){       return box_a.minimum.x < box_b.minimum.x;
-    }else if (axis==1){ return box_a.minimum.y < box_b.minimum.y;
-    }else{              return box_a.minimum.z < box_b.minimum.z;}
-}
-
-int box_x_compare(const void* a, const void* b){return box_compare(*((hittable**)a), *((hittable**)b), 0);}
-int box_y_compare(const void* a, const void* b){return box_compare(*((hittable**)a), *((hittable**)b), 1);}
-int box_z_compare(const void* a, const void* b){return box_compare(*((hittable**)a), *((hittable**)b), 2);}
-
-
-
-
+///Create a BVH node recursevly selecting src objects
 hittable* bvh_node_constructor(hittable** src_objects, int src_objects_count, int start, int end, double t0, double t1){
-    hittable* h = malloc(sizeof(hittable));
-    h->t = HITTABLE_BVH_NODE;
-
+    //Make node instance
     bvh_node* node = malloc(sizeof(bvh_node));
 
+    //Create copy of src_object to be able to sort it without messing with the original order
     hittable** objects = malloc(sizeof(hittable*)*src_objects_count);
     memcpy(objects, src_objects, sizeof(hittable*)*src_objects_count);
 
-    //printf("TEST: %p\n", objects[110]->obj);
-
-
+    //Select a random axis
     int raxis = random_double();
-
     int(*comparator)(const void*, const void*);
     if (raxis < 0.33){comparator = &box_x_compare;
     }else if (raxis < 0.66){comparator = &box_y_compare;
     }else{comparator = &box_z_compare;}
 
+    //Create leafs based on how many items i have to organize
     int object_span = end-start;
-
     if(object_span == 1){
+        //Only one: make both leafs the same object
         node->left = objects[start];
         node->right = node->left;
-
     }else if (object_span == 2){
-        if(comparator(&objects[start], &objects[start+1])){
-            node->left = objects[start];
-            node->right = objects[start+1];
-        }else{
-            node->left = objects[start+1];
-            node->right = objects[start];
-        }
-
+        //Two items, sort those and assign
+        int ind1, ind2;
+        if(comparator(&objects[start], &objects[start+1])){ind1 = start; ind2 = start+1;
+        }else{ind1 = start+1; ind2 = start;}
+        node->left = objects[ind1];
+        node->right = objects[ind2];
     }else{
+        //Multiple items: recursively sort, divide et impera
         qsort(objects, src_objects_count, sizeof(objects[0]), comparator);
-
         int mid = start + object_span/2;
         node->left  = bvh_node_constructor(src_objects, src_objects_count, start, mid, t0, t1);
         node->right = bvh_node_constructor(src_objects, src_objects_count, mid, end, t0, t1);
     }
 
+    //Make the two leafs AABB
     aabb box_left, box_right;
     if(!hittable_bounding_box(node->left, t0, t1, &box_left) || !hittable_bounding_box(node->right, t0, t1, &box_right)){
-        printf("Failed to get bounding box in bvh_node constructor.\n"); fflush(stdout);
-        return NULL;
-    }
+        printf("Failed to get bounding box in bvh_node constructor.\n"); fflush(stdout); return NULL;}
+
+    //Make the current AABB
     node->box = surrounding_box(box_left, box_right);
 
+    //Free the temporary object copy
     free(objects);
 
+    //Make generic and return (NOTE: we do not add it to the current hittable_list!)
+    hittable* h = malloc(sizeof(hittable));
+    h->t = HITTABLE_BVH_NODE;
     h->obj = node;
     return h;
 }
 
 
+///Create the root of a BVH tree
 hittable* bvh_node_init(struct hittable_list* world, struct hittable_list* objects, double t0, double t1){
     void* objs = hittable_list_objects(objects);
     int index = hittable_list_index(objects);
     hittable* o = bvh_node_constructor(objs, index, 0, index, t0, t1);
-
     hittable_list_add(world, o);
-
     return o;
 }
 
@@ -244,35 +227,32 @@ hittable* bvh_node_init(struct hittable_list* world, struct hittable_list* objec
 
 
 
+/**
+ * Transformation wrappers
+ * */
 
-
+///Create a translate wrapper around a hittable object to move it by offset
 hittable* hittable_translate_init(struct hittable_list* world, hittable* obj, vec3 offset){
-    hittable* o = malloc(sizeof(hittable));
-    o->t = HITTABLE_TRANSLATE;
     translate* translated = malloc(sizeof(translate));
     translated->obj = obj;
     translated->offset = offset;
-    o->obj = translated;
-    hittable_list_add(world, o);
-    return o;
+    //Make generic wrapper and return
+    return hittable_generic_new(world, HITTABLE_TRANSLATE, translated);
 }
 
 
-
-
-
-
+///Create a rotate wrapper around a hittable object to rotate it
 hittable* hittable_rotate_y_init(struct hittable_list* world, hittable* obj, double angle){
-    hittable* o = malloc(sizeof(hittable));
-    o->t = HITTABLE_ROTATEY;
     rotate_y* rotated = malloc(sizeof(rotate_y));
     rotated->obj = obj;
 
+    //Save some handy parameters
     double radians = deg2rad(angle);
     rotated->sin_theta = sin(radians);
     rotated->cos_theta = cos(radians);
     rotated->hasbox = hittable_bounding_box(obj, 0, 1, &rotated->bbox);
 
+    //Create the new AABB
     point3 min = {HUGE_VAL, HUGE_VAL, HUGE_VAL};
     point3 max = {-HUGE_VAL, -HUGE_VAL, -HUGE_VAL};
     for(int i=0; i<2; i++){
@@ -281,17 +261,13 @@ hittable* hittable_rotate_y_init(struct hittable_list* world, hittable* obj, dou
                 double x = i * rotated->bbox.maximum.x + (1-i) * rotated->bbox.minimum.x;
                 double y = j * rotated->bbox.maximum.y + (1-j) * rotated->bbox.minimum.y;
                 double z = k * rotated->bbox.maximum.z + (1-k) * rotated->bbox.minimum.z;
-
                 double newx = rotated->cos_theta * x + rotated->sin_theta * z;
                 double newz = -rotated->sin_theta * x + rotated->cos_theta * z;
-
                 vec3 tester = {newx, y, newz};
                 min.x = fmin(min.x, tester.x);
                 max.x = fmax(max.x, tester.x);
-
                 min.y = fmin(min.y, tester.y);
                 max.y = fmax(max.y, tester.y);
-
                 min.z = fmin(min.z, tester.z);
                 max.z = fmax(max.z, tester.z);
             }
@@ -299,29 +275,20 @@ hittable* hittable_rotate_y_init(struct hittable_list* world, hittable* obj, dou
     }
     rotated->bbox = (aabb){min, max};
 
-    o->obj = rotated;
-    hittable_list_add(world, o);
-    return o;
+    //Make generic wrapper and return
+    return hittable_generic_new(world, HITTABLE_ROTATEY, rotated);
 }
 
 
-
-
-
-
-
-
-
+///Create a constant medium wrapper for effect like smoke
 hittable* hittable_constant_medium_init(struct hittable_list* world, hittable* b, double d, texture* a){
-    hittable* o = malloc(sizeof(hittable));
-    o->t = HITTABLE_CONSTANT_MEDIUM;
     constant_medium* m = malloc(sizeof(constant_medium));
     m->boundary = b;
     m->neg_inv_density = -1/d;
     m->phase_function = (struct material*)material_isotropic_new(a);
-    o->obj = m;
-    hittable_list_add(world, o);
-    return o;}
+    //Make generic wrapper and return
+    return hittable_generic_new(world, HITTABLE_CONSTANT_MEDIUM, m);}
+///Create a constant medium wrapper for effect like smoke from color
 hittable* hittable_constant_medium_init_c(struct hittable_list* world, hittable* b, double d, color c){
     texture* t = texture_solid_color_init(c);
     return hittable_constant_medium_init(world, b, d, t);
@@ -352,57 +319,36 @@ hittable* hittable_constant_medium_init_c(struct hittable_list* world, hittable*
 
 ///Free hittable object
 void hittable_free(hittable* o){
-    //printf("Freeing hittable %p (%d)\n", o, o->t);
-    if(o->t == HITTABLE_SPHERE){
-        sphere* s = o->obj;
-        free(s);
-
-    }else if(o->t == HITTABLE_MOVING_SPHERE){
-        moving_sphere* s = o->obj;
-        free(s);
-
-    }else if(o->t == HITTABLE_BVH_NODE){
-
+    if(o->t == HITTABLE_BVH_NODE){
         bvh_node* n = o->obj;
-        //printf("Freeing bvh leafs %p %p\n", n->left, n->right);
-
         if (n->left == n->right){
+            //Same leaf, free once
             hittable_free(n->left);
         }else{
+            //Free both leafs
             hittable_free(n->left);
             hittable_free(n->right);
         }
-        free(n);
-
-    }else if(o->t == HITTABLE_XYRECT){
-        xy_rect* r = o->obj; free(r);
-    }else if(o->t == HITTABLE_XZRECT){
-        xz_rect* r = o->obj; free(r);
-    }else if(o->t == HITTABLE_YZRECT){
-        yz_rect* r = o->obj; free(r);
-
-    }else if(o->t == HITTABLE_BOX){
-        box* r = o->obj;
-        free(r);
 
     }else if(o->t == HITTABLE_TRANSLATE){
         translate* r = o->obj;
         hittable_free(r->obj);
-        free(r);
 
     }else if(o->t == HITTABLE_ROTATEY){
         rotate_y* r = o->obj;
         hittable_free(r->obj);
-        free(r);
 
     }else if(o->t == HITTABLE_CONSTANT_MEDIUM){
         constant_medium* m = o->obj;
         hittable_free(m->boundary);
-        free(m);
-
-    }else{printf("!! Not implemented hittable_free for type %d\n", o->t);}
+    }
+    free(o->obj);
     free(o);
 }
+
+
+
+
 
 
 
@@ -423,13 +369,21 @@ void sphere_get_uv(point3* p, double* u, double* v){
 
 
 
+
+
+
+
 /**
  *
  * Hittable Objects hit testing
  *
  * */
+
+//Forward declaration for cyclic dependencies
 int hittable_hit(hittable* o, ray* r, double tmin, double tmax, hit_record* rec);
 
+
+///Test intersection between line and spehere
 int line_sphere_intersection(vec3 oc, vec3 dir, double rad, double tmin, double tmax, double* root){
     double a = vec3_length_squared(&dir);
     double half_b = vec3_dot(&oc, &dir);
@@ -455,6 +409,7 @@ int line_sphere_intersection(vec3 oc, vec3 dir, double rad, double tmin, double 
     return 1;
 }
 
+
 ///Calculate sphere/ray hit and return a hit_record and a success state (0/1)
 int sphere_hit(sphere* s, ray* r, double tmin, double tmax, hit_record* rec){
     //Find the discriminant from the formula of intersection between a 3d line and a sphere
@@ -476,6 +431,12 @@ int sphere_hit(sphere* s, ray* r, double tmin, double tmax, hit_record* rec){
     }
 }
 
+
+///Fine the center of the sphere in a certain time t
+point3 moving_sphere_center(moving_sphere* s, double t){
+    double k = ((t - s->time0) / (s->time1 - s->time0));
+    return vec3c_sum(vec3c_mul_k(vec3_sub(&s->center1, &s->center0), k), s->center0);
+}
 
 
 ///Calculate sphere/ray hit and return a hit_record and a success state (0/1)
@@ -501,7 +462,7 @@ int moving_sphere_hit(moving_sphere* s, ray* r, double tmin, double tmax, hit_re
 }
 
 
-
+///Test hit on a BVH node
 int bvh_node_hit(bvh_node* node, ray* r, double tmin, double tmax, hit_record* rec){
     if(aabb_hit(&node->box, r, tmin, tmax) == 0){return 0;}
     int hit_left = hittable_hit(node->left, r, tmin, tmax, rec);
@@ -510,7 +471,7 @@ int bvh_node_hit(bvh_node* node, ray* r, double tmin, double tmax, hit_record* r
 }
 
 
-
+///Test hit on a XY rect
 int xy_rect_hit(xy_rect* rect, ray* r, double tmin, double tmax, hit_record* rec){
     double t = (rect->k - r->orig.z) / r->dir.z;
     if (t < tmin || t > tmax){return 0;}
@@ -526,6 +487,9 @@ int xy_rect_hit(xy_rect* rect, ray* r, double tmin, double tmax, hit_record* rec
     rec->p = ray_at(r, t);
     return 1;
 }
+
+
+///Test hit on a XZ rect
 int xz_rect_hit(xz_rect* rect, ray* r, double tmin, double tmax, hit_record* rec){
     double t = (rect->k - r->orig.y) / r->dir.y;
     if (t < tmin || t > tmax){return 0;}
@@ -541,6 +505,9 @@ int xz_rect_hit(xz_rect* rect, ray* r, double tmin, double tmax, hit_record* rec
     rec->p = ray_at(r, t);
     return 1;
 }
+
+
+///Test hit on a YZ rect
 int yz_rect_hit(yz_rect* rect, ray* r, double tmin, double tmax, hit_record* rec){
     double t = (rect->k - r->orig.x) / r->dir.x;
     if (t < tmin || t > tmax){return 0;}
