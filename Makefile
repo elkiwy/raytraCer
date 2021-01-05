@@ -2,24 +2,26 @@ SRC := src
 OBJ := obj
 BUILD := build
 CONTAINER := raytracer-memory-test
+CC := gcc-10
 
 SOURCES := $(wildcard $(SRC)/*.c)
 OBJECTS := $(patsubst $(SRC)/%.c, $(OBJ)/%.o, $(SOURCES))
 
 
-FLAGS = -g -Og -Wextra -Werror=implicit-int -Werror=incompatible-pointer-types -Werror=int-conversion
-FLAGS_SANITIZE = #-fsanitize=address -fsanitize=undefined
-#LIBS = -L /usr/local/lib -l SDL2-2.0.0 -l SDL2_ttf -l SDL2_image -l SDL2_gfx
+FLAGS = -g -Og -Wextra -Werror=implicit-int -Werror=incompatible-pointer-types -Werror=int-conversion -L/usr/local/lib #-fsanitize=address -fsanitize=undefined
 
-LINUX_EXTRA_LIBS=-L/usr/lib/x86_64-linux-gnu -lm
+LINUX_EXTRA_LIBS= #-L/usr/lib/x86_64-linux-gnu -lm
+OPENMP=-fopenmp
 
 
 build/raytraCer: clean $(OBJECTS)
-	gcc $(OBJECTS) $(FLAGS) $(FLAGS_SANITIZE) $(LIBS) $(LINUX_EXTRA_LIBS) -o $@
+	$(CC) $(OBJECTS) $(FLAGS) $(OPENMP) -o $@
+
+
 
 
 $(OBJ)/%.o: $(SRC)/%.c
-	gcc $(FLAGS) -c $< -o $@
+	$(CC) $(FLAGS) $(OPENMP) -c $< -o $@
 
 clean:
 	rm -f $(BUILD)/raytraCer && rm -f $(OBJ)/*.o
@@ -29,7 +31,9 @@ run: build/raytraCer
 
 
 test: build/raytraCer
-	./build/raytraCer output.ppm
+	./build/raytraCer output.png
+
+
 
 
 

@@ -1,7 +1,7 @@
 #include "aabb.h"
 
 
-
+///Initialize AABB from two points
 aabb* aabb_init(point3 a, point3 b){
     aabb* bb = malloc(sizeof(aabb));
     bb->minimum = a;
@@ -9,10 +9,14 @@ aabb* aabb_init(point3 a, point3 b){
     return bb;
 }
 
+
+///Frees an AABB
 void aabb_free(aabb* b){
     free(b);
 }
 
+
+///Pretty print an AABB
 void aabb_print(aabb* b){
     printf("Bounding box:\n");
     printf("  Min:");
@@ -23,8 +27,11 @@ void aabb_print(aabb* b){
 }
 
 
+///Swap values between two doubles
 void swapDoubles(double* a, double*b){double t = *a; *a = *b; *b = t;}
 
+
+///Test ray intersection
 int aabb_hit(aabb* box, ray* r, double tmin, double tmax){
     //Test for X
     float invD = 1.0f/(float)r->dir.x;
@@ -58,18 +65,22 @@ int aabb_hit(aabb* box, ray* r, double tmin, double tmax){
 }
 
 
+///Construct a box surrounding two other boxes
 aabb surrounding_box(aabb box0, aabb box1){
+    //Take the smallest point
     point3 small = {
         fmin(box0.minimum.x, box1.minimum.x),
         fmin(box0.minimum.y, box1.minimum.y),
         fmin(box0.minimum.z, box1.minimum.z)
     };
 
+    //Take the biggest point
     point3 big = {
         fmax(box0.maximum.x, box1.maximum.x),
         fmax(box0.maximum.y, box1.maximum.y),
         fmax(box0.maximum.z, box1.maximum.z)
     };
 
+    //Combine
     return (aabb){small, big};
 }
