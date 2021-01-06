@@ -10,13 +10,15 @@ OBJECTS := $(patsubst $(SRC)/%.c, $(OBJ)/%.o, $(SOURCES))
 
 FLAGS = -g -Og -Wextra -Werror=implicit-int -Werror=incompatible-pointer-types -Werror=int-conversion -L/usr/local/lib #-fsanitize=address -fsanitize=undefined
 
-LINUX_EXTRA_LIBS= #-L/usr/lib/x86_64-linux-gnu -lm
+LINUX_EXTRA_LIBS= -L/usr/lib/x86_64-linux-gnu -lm
 OPENMP=-fopenmp
 
 
 build/raytraCer: clean $(OBJECTS)
 	$(CC) $(OBJECTS) $(FLAGS) $(OPENMP) -o $@
 
+build/raytraCer_linux: clean $(OBJECTS)
+	$(CC) $(OBJECTS) $(FLAGS) $(LINUX_EXTRA_LIBS) $(OPENMP) -o $@
 
 
 
@@ -45,5 +47,5 @@ docker-run:
 docker-run-memory-test:
 	docker run -ti -v ~/Documents/raytraCer:/raytracer $(CONTAINER) bash -c "cd raytracer; make valgrind;"
 
-valgrind: build/raytraCer
-	valgrind --leak-check=yes ./build/raytraCer output.ppm
+valgrind: build/raytraCer_linux
+	valgrind --leak-check=yes ./build/raytraCer_linux output.ppm
