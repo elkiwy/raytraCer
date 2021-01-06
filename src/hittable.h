@@ -46,12 +46,10 @@ typedef enum {
     HITTABLE_BVH_NODE,
     HITTABLE_SPHERE,
     HITTABLE_MOVING_SPHERE,
-    HITTABLE_XYRECT,
-    HITTABLE_XZRECT,
-    HITTABLE_YZRECT,
+    HITTABLE_RECT,
     HITTABLE_BOX,
     HITTABLE_TRANSLATE,
-    HITTABLE_ROTATEY,
+    HITTABLE_ROTATE,
     HITTABLE_CONSTANT_MEDIUM,
 } hittable_type;
 
@@ -69,12 +67,9 @@ typedef struct hittable{
 
 ///Sphere object
 typedef struct { point3 center; double r; struct material* mat; } sphere;
-///Axis aligned rect on Z axis
-typedef struct { struct material* mat; double x0, x1, y0, y1, k; } xy_rect;
-///Axis aligned rect on Y axis
-typedef struct { struct material* mat; double x0, x1, z0, z1, k; } xz_rect;
-///Axis aligned rect on X axis
-typedef struct { struct material* mat; double y0, y1, z0, z1, k; } yz_rect;
+///Axis aligned rect
+typedef enum {XY, XZ, YZ} rect_axis;
+typedef struct { struct material* mat; double x0, x1, y0, y1, z0, z1, k; rect_axis axis; } rect;
 ///3D Box
 typedef struct { point3 box_min; point3 box_max; struct hittable_list* sides; } box;
 
@@ -108,7 +103,8 @@ typedef struct {hittable* boundary; struct material* phase_function; double neg_
 typedef struct {hittable* obj; vec3 offset;}translate;
 ///Hittable object Wrapper to apply rotation
 //TODO implement all other rotation in a single object
-typedef struct {hittable* obj; double sin_theta; double cos_theta; int hasbox; aabb bbox;}rotate_y;
+typedef enum {X, Y, Z} rotation_axis;
+typedef struct {hittable* obj; double sin_theta; double cos_theta; int hasbox; aabb bbox; rotation_axis axis;}rotate;
 
 
 
@@ -122,14 +118,12 @@ typedef struct {hittable* obj; double sin_theta; double cos_theta; int hasbox; a
 
 //Initializers
 hittable* hittable_sphere_new(struct hittable_list* world, point3 center, double r, struct material* mat);
-hittable* hittable_xy_rect_new(struct hittable_list* world, double x0, double x1, double y0, double y1, double k, struct material* mat);
-hittable* hittable_xz_rect_new(struct hittable_list* world, double x0, double x1, double z0, double z1, double k, struct material* mat);
-hittable* hittable_yz_rect_new(struct hittable_list* world, double y0, double y1, double z0, double z1, double k, struct material* mat);
+hittable* hittable_rect_new(struct hittable_list* world, double x0, double x1, double y0, double y1, double z0, double z1, double k, rect_axis axis, struct material* mat);
 hittable* hittable_box_new(struct hittable_list* world, point3 min, point3 max, struct material* mat);
 hittable* hittable_moving_sphere_new(struct hittable_list* world, point3 center0, point3 center1, double t0, double t1, double r, struct material* mat);
 hittable* bvh_node_init(struct hittable_list* world, struct hittable_list* objects, double t0, double t1);
 hittable* hittable_translate_init(struct hittable_list* world, hittable* obj, vec3 offset);
-hittable* hittable_rotate_y_init(struct hittable_list* world, hittable* obj, double angle);
+hittable* hittable_rotate_init(struct hittable_list* world, hittable* obj, double angle, rotation_axis axis);
 hittable* hittable_constant_medium_init(struct hittable_list* world, hittable* b, double d, texture* a);
 hittable* hittable_constant_medium_init_c(struct hittable_list* world, hittable* b, double d, color c);
 

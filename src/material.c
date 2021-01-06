@@ -3,39 +3,34 @@
 
 
 
+/**
+ * Deinits and Garbage collection
+ * */
 
-
-
-void materials_free_all(){
-    printf("Freeing %d materials...\n", materials_index);fflush(stdout);
-    for(int i=0;i<materials_index;i++){
-        material_free(materials_allocated[i]);
-    }
-    printf("Done!\n");fflush(stdout);
-}
-
+///Free a material
 void material_free(material* m){
-    if (m->type == MATERIAL_LAMBERTIAN){
-        material_lambertian* lamb = m->mat;
-        //texture_free(lamb->albedo);
-        free(m->mat);
-    }else if (m->type == MATERIAL_METAL){
-        free(m->mat);
-    }else if (m->type == MATERIAL_DIELECTRIC){
-        free(m->mat);
-    }else if (m->type == MATERIAL_LIGHT){
-        material_light* light = m->mat;
-        //texture_free(light->emit);
-        free(m->mat);
-    }else if (m->type == MATERIAL_ISOTROPIC){
-        material_isotropic* iso = m->mat;
-        //texture_free(iso->albedo);
-        free(m->mat);
-    }
+    free(m->mat);
     free(m);
 }
 
 
+///Free all the allocated materials
+void materials_free_all(){
+    printf("Freeing %d materials...\n", materials_index);fflush(stdout);
+    for(int i=0;i<materials_index;i++){material_free(materials_allocated[i]);}
+    printf("Done!\n");fflush(stdout);
+}
+
+
+
+
+
+/**
+ * Materials Initializations
+ */
+
+
+///Init a generic abstract material
 material* material_generic_init(material_type t){
     material* m = malloc(sizeof(material));
     m->type = t;
@@ -47,11 +42,6 @@ material* material_generic_init(material_type t){
 }
 
 
-/**
- * Materials Initializations
- */
-
-
 ///Init Lambertian
 material* material_lambertian_new(texture* t){
     material* m = material_generic_init(MATERIAL_LAMBERTIAN);
@@ -59,10 +49,12 @@ material* material_lambertian_new(texture* t){
     l->albedo = t;
     m->mat = l;
     return m;}
+///Init Lambertian with a color
 material* material_lambertian_new_from_color(color c){
     texture* t = texture_solid_color_init(c);
     return material_lambertian_new(t);
 }
+
 
 ///Init metal
 material* material_metal_new(color a, double fuzz){
@@ -74,6 +66,7 @@ material* material_metal_new(color a, double fuzz){
     return m;
 }
 
+
 ///Init dielectric
 material* material_dielectric_new(double ir){
     material* m = material_generic_init(MATERIAL_DIELECTRIC);
@@ -83,6 +76,7 @@ material* material_dielectric_new(double ir){
     return m;
 }
 
+
 ///Init light
 material* material_light_new(texture* t){
     material* m = material_generic_init(MATERIAL_LIGHT);
@@ -90,6 +84,7 @@ material* material_light_new(texture* t){
     l->emit = t;
     m->mat = l;
     return m;}
+///Init light with color
 material* material_light_new_from_color(color c){
     texture* t = texture_solid_color_init(c);
     return material_light_new(t);
@@ -103,6 +98,7 @@ material* material_isotropic_new(texture* t){
     l->albedo = t;
     m->mat = l;
     return m;}
+///Init isotropic with color
 material* material_isotropic_new_from_color(color c){
     texture* t = texture_solid_color_init(c);
     return material_isotropic_new(t);
@@ -110,9 +106,15 @@ material* material_isotropic_new_from_color(color c){
 
 
 
+
+
+
+
+
 /**
  * Material Scattering
  */
+
 
 ///Scatter a ray that hits a lambertian material
 int material_lambertian_scatter(material_lambertian* mat, ray*r, hit_record* rec, color* attenuation, ray* scattered){
@@ -154,14 +156,11 @@ int material_dielectric_scatter(material_dielectric* mat, ray*r, hit_record* rec
     if(cannot_refract || reflectance(cos_theta, refraction_ratio) > random_double()){
         direction = vec3_reflect(&unit_dir, &rec->normal);
     }else{
-        direction = vec3c_refract(unit_dir, rec->normal, refraction_ratio);
-    }
-
+        direction = vec3c_refract(unit_dir, rec->normal, refraction_ratio);}
     *scattered = (ray){rec->p, direction, r->time};
     *attenuation = (color){1,1,1};
     return 1;
 }
-
 
 
 ///Scatter a light
@@ -176,7 +175,6 @@ int material_isotropic_scatter(material_isotropic* mat, ray*r, hit_record* rec, 
     *attenuation = texture_value(mat->albedo, rec->u, rec->v, &rec->p);
     return 1;
 }
-
 
 
 ///Generic scatter material
@@ -201,14 +199,16 @@ int material_scatter(material* mat, ray* r, hit_record* rec, color* attenuation,
 
 
 /**
- * Material Scattering
+ * Material Emission
  */
 
+///Light emission
 color material_light_emitted(material_light* light, double u, double v, point3 p){
     return texture_value(light->emit, u, v, &p);
 }
 
 
+///Material emission
 color material_emitted(material* mat, double u, double v, point3 p){
     //Return the emitted color
     if(mat->type == MATERIAL_LIGHT){

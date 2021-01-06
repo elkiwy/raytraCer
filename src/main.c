@@ -171,7 +171,7 @@ hittable_list* simple_light(){
     hittable* s1 = hittable_sphere_new(world, (point3){0, -1000, 0}, 1000, (struct material*)mat1);
     hittable* s2 = hittable_sphere_new(world, (point3){0,  2, 0}, 2, (struct material*)mat1);
     material* difflight = material_light_new_from_color((color){4,4,4});
-    hittable* l1 = hittable_xy_rect_new(world, 3, 5, 1, 3, -2, (struct material*)difflight);
+    hittable* l1 = hittable_rect_new(world, 3, 5, 1, 3, 0,0, -2,  XY, (struct material*)difflight);
     return world;
 }
 
@@ -183,17 +183,19 @@ hittable_list* cornell_box(){
     material* whi = material_lambertian_new_from_color((color){0.73, 0.73, 0.73});
     material* gre = material_lambertian_new_from_color((color){0.12, 0.45, 0.15});
     material* lig = material_light_new_from_color((color){15,15,15});
-    hittable* b1 = hittable_yz_rect_new(world, 0, 555, 0, 555, 555, (struct material*)gre);
-    hittable* b2 = hittable_yz_rect_new(world, 0, 555, 0, 555, 0, (struct material*)red);
-    hittable* b3 = hittable_xz_rect_new(world, 213, 343, 227, 332, 554, (struct material*)lig);
-    hittable* b4 = hittable_xz_rect_new(world, 0, 555, 0, 555, 0, (struct material*)whi);
-    hittable* b5 = hittable_xz_rect_new(world, 0, 555, 0, 555, 555, (struct material*)whi);
-    hittable* b6 = hittable_xy_rect_new(world, 0, 555, 0, 555, 555, (struct material*)whi);
+    hittable* b1 = hittable_rect_new(world, 0,0, 0, 555, 0, 555, 555, YZ, (struct material*)gre);
+    hittable* b2 = hittable_rect_new(world, 0,0, 0, 555, 0, 555, 0, YZ, (struct material*)red);
+
+    hittable* b3 = hittable_rect_new(world, 213, 343, 0,0, 227, 332, 554, XZ, (struct material*)lig);
+    hittable* b4 = hittable_rect_new(world, 0, 555, 0,0, 0, 555, 0, XZ, (struct material*)whi);
+    hittable* b5 = hittable_rect_new(world, 0, 555, 0,0, 0, 555, 555, XZ, (struct material*)whi);
+
+    hittable* b6 = hittable_rect_new(world, 0, 555, 0, 555, 0,0, 555, XY, (struct material*)whi);
     hittable* box1 = hittable_box_new(NULL, (point3){0,0,0}, (point3){165,330,165}, (struct material*)whi);
-    box1 = hittable_rotate_y_init(NULL, box1, 15);
+    box1 = hittable_rotate_init(NULL, box1, 15, X);
     box1 = hittable_translate_init(world, box1, (vec3){265, 0, 295});
     hittable* box2 = hittable_box_new(NULL, (point3){0,0,0}, (point3){165,165,165}, (struct material*)whi);
-    box2 = hittable_rotate_y_init(NULL, box2, -18);
+    box2 = hittable_rotate_init(NULL, box2, -18, Y);
     box2 = hittable_translate_init(world, box2, (vec3){130, 0, 65});
     return world;
 }
@@ -206,18 +208,18 @@ hittable_list* cornell_smoke(){
     material* whi = material_lambertian_new_from_color((color){0.73, 0.73, 0.73});
     material* gre = material_lambertian_new_from_color((color){0.12, 0.45, 0.15});
     material* lig = material_light_new_from_color((color){15,15,15});
-    hittable* b1 = hittable_yz_rect_new(world, 0, 555, 0, 555, 555, (struct material*)gre);
-    hittable* b2 = hittable_yz_rect_new(world, 0, 555, 0, 555, 0, (struct material*)red);
-    hittable* b3 = hittable_xz_rect_new(world, 213, 343, 227, 332, 554, (struct material*)lig);
-    hittable* b4 = hittable_xz_rect_new(world, 0, 555, 0, 555, 0, (struct material*)whi);
-    hittable* b5 = hittable_xz_rect_new(world, 0, 555, 0, 555, 555, (struct material*)whi);
-    hittable* b6 = hittable_xy_rect_new(world, 0, 555, 0, 555, 555, (struct material*)whi);
+    hittable* b1 = hittable_rect_new(world, 0,0, 0, 555, 0, 555, 555, YZ, (struct material*)gre);
+    hittable* b2 = hittable_rect_new(world, 0,0, 0, 555, 0, 555, 0, YZ, (struct material*)red);
+    hittable* b3 = hittable_rect_new(world, 213, 343, 0,0, 227, 332, 554, XZ, (struct material*)lig);
+    hittable* b4 = hittable_rect_new(world, 0, 555, 0,0, 0, 555, 0, XZ, (struct material*)whi);
+    hittable* b5 = hittable_rect_new(world, 0, 555, 0,0, 0, 555, 555, XZ, (struct material*)whi);
+    hittable* b6 = hittable_rect_new(world, 0, 555, 0, 555, 0,0, 555, XY, (struct material*)whi);
     hittable* box1 = hittable_box_new(NULL, (point3){0,0,0}, (point3){165,330,165}, (struct material*)whi);
-    box1 = hittable_rotate_y_init(NULL, box1, 15);
+    box1 = hittable_rotate_init(NULL, box1, 15, Y);
     box1 = hittable_translate_init(NULL, box1, (vec3){265, 0, 295});
     box1 = hittable_constant_medium_init_c(world, box1, 0.01, (color){0,0,0});
     hittable* box2 = hittable_box_new(NULL, (point3){0,0,0}, (point3){165,165,165}, (struct material*)whi);
-    box2 = hittable_rotate_y_init(NULL, box2, -18);
+    box2 = hittable_rotate_init(NULL, box2, -18, Y);
     box2 = hittable_translate_init(NULL, box2, (vec3){130, 0, 65});
     box2 = hittable_constant_medium_init_c(world, box2, 0.01, (color){1,1,1});
     return world;
@@ -249,7 +251,7 @@ hittable_list* final_scene(){
 
     //Setup light
     material* light = material_light_new_from_color((color){7,7,7});
-    hittable* b3 = hittable_xz_rect_new(objects, 123, 423, 147, 412, 554, (struct material*)light);
+    hittable_rect_new(objects, 123, 423, 0,0, 147, 412, 554, XZ, (struct material*)light);
 
     //Moving sphere
     point3 center1 = (point3){400, 400, 200};
@@ -263,7 +265,7 @@ hittable_list* final_scene(){
     //Metal ball
     hittable_sphere_new(objects, (point3){0,150,145}, 50, (struct material *)material_metal_new((color){0.8,0.8,0.8}, 1.0));
 
-
+    //Gas ball
     hittable* boundary = hittable_sphere_new(NULL, (point3){360,150,145}, 70, (struct material *)material_dielectric_new(1.5));
     hittable_constant_medium_init_c(objects, boundary, 0.025, (color){0.2,0.4,0.9});
 
@@ -281,7 +283,7 @@ hittable_list* final_scene(){
     int ns = 1000;
     for (int j = 0; j < ns; j++) {hittable_sphere_new(boxes2, vec3_random_scaled(0,165), 10, (struct material *)white);}
     hittable* bvh = bvh_node_init(NULL, boxes2, 0, 1);
-    hittable* rotated = hittable_rotate_y_init(NULL, bvh, 15);
+    hittable* rotated = hittable_rotate_init(NULL, bvh, 15, Y);
     hittable* translated = hittable_translate_init(objects, rotated, (vec3){-100, 270, 395});
     return objects;
 }
@@ -315,7 +317,7 @@ int main(int argc, char** argv) {
 
     //Define objects list
     hittable_list* world;
-    switch(8){
+    switch(6){
         case 1:
             world = setup_scene();
             background = (color){0.70, 0.80, 1.00};
@@ -385,7 +387,7 @@ int main(int argc, char** argv) {
     }
 
     //Init camera
-    const int IMAGE_WIDTH = 1024/4;
+    const int IMAGE_WIDTH = 1024/2;
     const int IMAGE_HEIGHT = (int)(IMAGE_WIDTH / ASPECT_RATIO);
     const int samples_per_pixel = 32; //how many ray per pixel
     const int max_recursion_depth = 8; //how deep the ray scattering goes
@@ -412,7 +414,7 @@ int main(int argc, char** argv) {
 
     //Split height into chunks and give them to threads
     #pragma omp parallel for
-    for(int k=0; k<THREADS; ++k){
+    for(unsigned int k=0; k<THREADS; ++k){
         double thread_begin = omp_get_wtime();
 
         //Each threads cycle a step numer of rows

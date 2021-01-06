@@ -9,12 +9,10 @@
 
 #define POINT_COUNT 256
 
+
 typedef struct{
     //There are all arrays of POINT_COUNT, but we only store the point in the struct for efficency
-    vec3* ranvec;
-    int* perm_x;
-    int* perm_y;
-    int* perm_z;
+    vec3* ranvec; int* perm_x; int* perm_y; int* perm_z;
 }perlin;
 
 

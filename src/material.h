@@ -9,9 +9,8 @@
 #include "hittable.h"
 #include "texture.h"
 
-
+//Forward declaration of hit record
 struct hit_record;
-
 
 
 
@@ -27,6 +26,7 @@ typedef struct{texture* emit;}material_light;
 typedef struct{texture* albedo;}material_isotropic;
 
 
+//Init
 material* material_lambertian_new(texture* t);
 material* material_lambertian_new_from_color(color c);
 material* material_metal_new(color a, double fuzz);
@@ -36,20 +36,14 @@ material* material_light_new_from_color(color c);
 material* material_isotropic_new(texture* t);
 material* material_isotropic_new_from_color(color c);
 
-
-
-
+//Deinit
 void material_free(material* m);
 static material* materials_allocated[1024];
 static int materials_index = 0;
 void materials_free_all();
 
-
-
-
-
+//Features
 int material_scatter(material* mat, ray* r, struct hit_record* rec, color* attenuation, ray* scattered);
-
 color material_emitted(material* mat, double u, double v, point3 p);
 
 #endif // __MATERIAL_H_

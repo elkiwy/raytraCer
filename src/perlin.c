@@ -2,7 +2,14 @@
 
 
 
+/**
+ *
+ * Utilities
+ *
+ * */
 
+
+///Scramble an int array N times
 void permute(int* p, int n){
     for(int i=0;i<n;++i){
         int target = random_int(0, i);
@@ -13,6 +20,7 @@ void permute(int* p, int n){
 }
 
 
+///Generate a random permutation
 int* perlin_generate_perm(){
     int* p = malloc(sizeof(int)*POINT_COUNT);
     for(int i=0;i<POINT_COUNT;++i){p[i] = i;}
@@ -20,19 +28,8 @@ int* perlin_generate_perm(){
     return p;
 }
 
-double trilinear_interp(double c[2][2][2], double u, double v, double w){
-    double accum = 0.0;
-    for (int i=0;i<2;i++){
-        for (int j=0;j<2;j++){
-            for (int k=0;k<2;k++){
-                accum += (i*u + (1-i)*(1-u)) * (j*v + (1-j)*(1-v)) * (k*w + (1-k)*(1-w)) * c[i][j][k];
-            }
-        }
-    }
-    return accum;
-}
 
-
+///Perlin vector values interpolation
 double perlin_interp(vec3 c[2][2][2], double u, double v, double w){
     double uu = u*u*(3-2*u);// Hermitan smoothing
     double vv = v*v*(3-2*v);
@@ -60,14 +57,17 @@ double perlin_interp(vec3 c[2][2][2], double u, double v, double w){
 
 
 
+/**
+ *
+ * Init
+ *
+ * */
 
-
+///Init a perlin struct
 perlin* perlin_init(){
     perlin* p = malloc(sizeof(perlin));
     p->ranvec = malloc(sizeof(vec3)*POINT_COUNT);
-    for (int i=0;i<POINT_COUNT; ++i){
-        p->ranvec[i] = vec3c_unit(vec3_random_scaled(-1, 1));
-    }
+    for (int i=0;i<POINT_COUNT; ++i){p->ranvec[i] = vec3c_unit(vec3_random_scaled(-1, 1));}
     p->perm_x = perlin_generate_perm();
     p->perm_y = perlin_generate_perm();
     p->perm_z = perlin_generate_perm();
@@ -77,6 +77,14 @@ perlin* perlin_init(){
 
 
 
+
+/**
+ *
+ * Free
+ *
+ * */
+
+///Free a perlin
 void perlin_free(perlin* p){
     free(p->ranvec);
     free(p->perm_x);
@@ -89,6 +97,14 @@ void perlin_free(perlin* p){
 
 
 
+
+/**
+ *
+ * Features
+ *
+ * */
+
+///Get a value from a point on the perlin noise
 double perlin_noise(perlin* p, point3 point){
     double u = point.x - floor(point.x);
     double v = point.y - floor(point.y);
@@ -96,9 +112,7 @@ double perlin_noise(perlin* p, point3 point){
     int i = (int)floor(point.x);
     int j = (int)floor(point.y);
     int k = (int)floor(point.z);
-
     vec3 c[2][2][2];
-
     for (int di=0; di < 2; di++){
         for (int dj=0; dj < 2; dj++){
             for (int dk=0; dk < 2; dk++){
@@ -110,13 +124,11 @@ double perlin_noise(perlin* p, point3 point){
             }
         }
     }
-
     return perlin_interp(c, u, v, w);
 }
 
 
-
-
+///Get a value from recusivly extracting values from perlin
 double turb_rec(perlin* perl, point3 p, int depth){
     double accum = 0.0;
     point3 temp_p = p;
@@ -128,6 +140,9 @@ double turb_rec(perlin* perl, point3 p, int depth){
     }
     return fabs(accum);
 }
+
+
+///Get a turbolenced value from a perlin
 double perlin_turb(perlin* perl, point3 p){
     return turb_rec(perl, p, 7);
 }

@@ -24,6 +24,31 @@ void hit_record_print(hit_record* h){
 
 
 
+
+
+
+/**
+ *
+ * Utility
+ *
+ * */
+
+
+void rotatePoint(vec3 original, double sin_theta, double cos_theta, rotation_axis axis, vec3* output){
+    if (axis == X){
+        output->x =  cos_theta * original.x  -  sin_theta * original.y;
+        output->y =  sin_theta * original.x  +  cos_theta * original.y;
+    }else if (axis == Y){
+        output->x =  cos_theta * original.x  +  sin_theta * original.z;
+        output->z = -sin_theta * original.x  +  cos_theta * original.z;
+    }else{
+        output->y =  cos_theta * original.y  -  sin_theta * original.z;
+        output->z =  sin_theta * original.y  +  cos_theta * original.z;
+    }
+}
+
+
+
 /**
  *
  * BVH AABB sorting
@@ -99,38 +124,16 @@ hittable* hittable_moving_sphere_new(struct hittable_list* world, point3 center0
 
 
 ///Create a XY axis aligned rect
-hittable* hittable_xy_rect_new(struct hittable_list* world, double x0, double x1, double y0, double y1, double k, struct material* mat){
-    xy_rect* r = malloc(sizeof(xy_rect));
+hittable* hittable_rect_new(struct hittable_list* world, double x0, double x1, double y0, double y1, double z0, double z1, double k, rect_axis axis, struct material* mat){
+    rect* r = malloc(sizeof(rect));
     r->x0 = x0; r->x1 = x1;
-    r->y0 = y0; r->y1 = y1;
-    r->k = k;
-    r->mat = mat;
-    //Make generic wrapper and return
-    return hittable_generic_new(world, HITTABLE_XYRECT, r);
-}
-
-
-///Create a XZ axis aligned rect
-hittable* hittable_xz_rect_new(struct hittable_list* world, double x0, double x1, double z0, double z1, double k, struct material* mat){
-    xz_rect* r = malloc(sizeof(xz_rect));
-    r->x0 = x0; r->x1 = x1;
-    r->z0 = z0; r->z1 = z1;
-    r->k = k;
-    r->mat = mat;
-    //Make generic wrapper and return
-    return hittable_generic_new(world, HITTABLE_XZRECT, r);
-}
-
-
-///Create a YZ axis aligned rect
-hittable* hittable_yz_rect_new(struct hittable_list* world, double y0, double y1, double z0, double z1, double k, struct material* mat){
-    yz_rect* r = malloc(sizeof(yz_rect));
     r->y0 = y0; r->y1 = y1;
     r->z0 = z0; r->z1 = z1;
     r->k = k;
+    r->axis = axis;
     r->mat = mat;
     //Make generic wrapper and return
-    return hittable_generic_new(world, HITTABLE_YZRECT, r);
+    return hittable_generic_new(world, HITTABLE_RECT, r);
 }
 
 
@@ -142,12 +145,12 @@ hittable* hittable_box_new(struct hittable_list* world, point3 min, point3 max, 
 
     //Make all 6 sides
     b->sides = (struct hittable_list*)hittable_list_new(6);
-    hittable_xy_rect_new(b->sides, min.x, max.x, min.y, max.y, max.z, mat);
-    hittable_xy_rect_new(b->sides, min.x, max.x, min.y, max.y, min.z, mat);
-    hittable_xz_rect_new(b->sides, min.x, max.x, min.z, max.z, max.y, mat);
-    hittable_xz_rect_new(b->sides, min.x, max.x, min.z, max.z, min.y, mat);
-    hittable_yz_rect_new(b->sides, min.y, max.y, min.z, max.z, max.x, mat);
-    hittable_yz_rect_new(b->sides, min.y, max.y, min.z, max.z, min.x, mat);
+    hittable_rect_new(b->sides, min.x, max.x, min.y, max.y, 0, 0, max.z, XY, mat);
+    hittable_rect_new(b->sides, min.x, max.x, min.y, max.y, 0, 0, min.z, XY, mat);
+    hittable_rect_new(b->sides, min.x, max.x, 0, 0, min.z, max.z, max.y, XZ, mat);
+    hittable_rect_new(b->sides, min.x, max.x, 0, 0, min.z, max.z, min.y, XZ, mat);
+    hittable_rect_new(b->sides, 0, 0, min.y, max.y, min.z, max.z, max.x, YZ, mat);
+    hittable_rect_new(b->sides, 0, 0, min.y, max.y, min.z, max.z, min.x, YZ, mat);
 
     //Make generic wrapper and return
     return hittable_generic_new(world, HITTABLE_BOX, b);
@@ -242,9 +245,10 @@ hittable* hittable_translate_init(struct hittable_list* world, hittable* obj, ve
 
 
 ///Create a rotate wrapper around a hittable object to rotate it
-hittable* hittable_rotate_y_init(struct hittable_list* world, hittable* obj, double angle){
-    rotate_y* rotated = malloc(sizeof(rotate_y));
+hittable* hittable_rotate_init(struct hittable_list* world, hittable* obj, double angle, rotation_axis axis){
+    rotate* rotated = malloc(sizeof(rotate));
     rotated->obj = obj;
+    rotated->axis = axis;
 
     //Save some handy parameters
     double radians = deg2rad(angle);
@@ -261,9 +265,15 @@ hittable* hittable_rotate_y_init(struct hittable_list* world, hittable* obj, dou
                 double x = i * rotated->bbox.maximum.x + (1-i) * rotated->bbox.minimum.x;
                 double y = j * rotated->bbox.maximum.y + (1-j) * rotated->bbox.minimum.y;
                 double z = k * rotated->bbox.maximum.z + (1-k) * rotated->bbox.minimum.z;
-                double newx = rotated->cos_theta * x + rotated->sin_theta * z;
-                double newz = -rotated->sin_theta * x + rotated->cos_theta * z;
-                vec3 tester = {newx, y, newz};
+
+                vec3 p = {x, y, z};
+                vec3 tester = p;
+                rotatePoint(p, rotated->sin_theta, rotated->cos_theta, rotated->axis, &tester);
+
+                //double newx = rotated->cos_theta * x + rotated->sin_theta * z;
+                //double newz = -rotated->sin_theta * x + rotated->cos_theta * z;
+
+                //vec3 tester = {newx, y, newz};
                 min.x = fmin(min.x, tester.x);
                 max.x = fmax(max.x, tester.x);
                 min.y = fmin(min.y, tester.y);
@@ -276,7 +286,7 @@ hittable* hittable_rotate_y_init(struct hittable_list* world, hittable* obj, dou
     rotated->bbox = (aabb){min, max};
 
     //Make generic wrapper and return
-    return hittable_generic_new(world, HITTABLE_ROTATEY, rotated);
+    return hittable_generic_new(world, HITTABLE_ROTATE, rotated);
 }
 
 
@@ -334,8 +344,8 @@ void hittable_free(hittable* o){
         translate* r = o->obj;
         hittable_free(r->obj);
 
-    }else if(o->t == HITTABLE_ROTATEY){
-        rotate_y* r = o->obj;
+    }else if(o->t == HITTABLE_ROTATE){
+        rotate* r = o->obj;
         hittable_free(r->obj);
 
     }else if(o->t == HITTABLE_CONSTANT_MEDIUM){
@@ -471,17 +481,26 @@ int bvh_node_hit(bvh_node* node, ray* r, double tmin, double tmax, hit_record* r
 }
 
 
-///Test hit on a XY rect
-int xy_rect_hit(xy_rect* rect, ray* r, double tmin, double tmax, hit_record* rec){
-    double t = (rect->k - r->orig.z) / r->dir.z;
+///Test hit on a axis aligned rect
+int rect_hit(rect* rect, ray* r, double tmin, double tmax, hit_record* rec){
+    //Check for plane ray intersection
+    double t;
+    if(rect->axis == XY){t = (rect->k - r->orig.z) / r->dir.z;
+    }else if(rect->axis == XZ){t = (rect->k - r->orig.y) / r->dir.y;
+    }else{t = (rect->k - r->orig.x) / r->dir.x;}
     if (t < tmin || t > tmax){return 0;}
-    double x = r->orig.x + t * r->dir.x;
-    double y = r->orig.y + t * r->dir.y;
-    if (x < rect->x0 || x> rect->x1 || y < rect->y0 || y > rect->y1){return 0;}
-    rec->u = (x - rect->x0)/(rect->x1 - rect->x0);
-    rec->v = (y - rect->y0)/(rect->y1 - rect->y0);
+
+    //Find if the point of intersection is in the boundary
+    double x = r->orig.x + t * r->dir.x; double y = r->orig.y + t * r->dir.y; double z = r->orig.z + t * r->dir.z;
+    if ((rect->axis == XZ && (x < rect->x0 || x> rect->x1 || z < rect->z0 || z > rect->z1))
+     || (rect->axis == XY && (x < rect->x0 || x> rect->x1 || y < rect->y0 || y > rect->y1))
+     || (rect->axis == YZ && (z < rect->z0 || z> rect->z1 || y < rect->y0 || y > rect->y1))) {return 0;}
+
+    //Register the hit
+    rec->u = rect->axis==YZ ? (y - rect->y0)/(rect->y1 - rect->y0) : (x - rect->x0)/(rect->x1 - rect->x0);
+    rec->v = rect->axis==XY ? (y - rect->y0)/(rect->y1 - rect->y0) : (z - rect->z0)/(rect->z1 - rect->z0);
     rec->t = t;
-    vec3 outward_normal = {0,0,1};
+    vec3 outward_normal = {rect->axis==YZ?1:0,rect->axis==XZ?1:0,rect->axis==XY?1:0};
     hit_record_set_facenormal(rec, r, &outward_normal);
     rec->mat = rect->mat;
     rec->p = ray_at(r, t);
@@ -489,116 +508,71 @@ int xy_rect_hit(xy_rect* rect, ray* r, double tmin, double tmax, hit_record* rec
 }
 
 
-///Test hit on a XZ rect
-int xz_rect_hit(xz_rect* rect, ray* r, double tmin, double tmax, hit_record* rec){
-    double t = (rect->k - r->orig.y) / r->dir.y;
-    if (t < tmin || t > tmax){return 0;}
-    double x = r->orig.x + t * r->dir.x;
-    double z = r->orig.z + t * r->dir.z;
-    if (x < rect->x0 || x> rect->x1 || z < rect->z0 || z > rect->z1){return 0;}
-    rec->u = (x - rect->x0)/(rect->x1 - rect->x0);
-    rec->v = (z - rect->z0)/(rect->z1 - rect->z0);
-    rec->t = t;
-    vec3 outward_normal = {0,1,0};
-    hit_record_set_facenormal(rec, r, &outward_normal);
-    rec->mat = rect->mat;
-    rec->p = ray_at(r, t);
-    return 1;
-}
-
-
-///Test hit on a YZ rect
-int yz_rect_hit(yz_rect* rect, ray* r, double tmin, double tmax, hit_record* rec){
-    double t = (rect->k - r->orig.x) / r->dir.x;
-    if (t < tmin || t > tmax){return 0;}
-    double y = r->orig.y + t * r->dir.y;
-    double z = r->orig.z + t * r->dir.z;
-    if (z < rect->z0 || z> rect->z1 || y < rect->y0 || y > rect->y1){return 0;}
-    rec->u = (y - rect->y0)/(rect->y1 - rect->y0);
-    rec->v = (z - rect->z0)/(rect->z1 - rect->z0);
-    rec->t = t;
-    vec3 outward_normal = {1,0,0};
-    hit_record_set_facenormal(rec, r, &outward_normal);
-    rec->mat = rect->mat;
-    rec->p = ray_at(r, t);
-    return 1;
-}
-
-
+///Test hit on a box
 int box_hit(box* b, ray* r, double tmin, double tmax, hit_record* rec){
     return hittable_list_hit(b->sides, r, tmin, tmax, rec);
 }
 
-int translate_hit(translate* b, ray* r, double tmin, double tmax, hit_record* rec){
-    ray moved_ray = {vec3c_sub(r->orig, b->offset), r->dir, r->time};
-    if (!hittable_hit(b->obj, &moved_ray, tmin, tmax, rec))
-        return 0;
 
+///Test hit on a translated object
+int translate_hit(translate* b, ray* r, double tmin, double tmax, hit_record* rec){
+    //Move the ray to simulate movement and test on the wrapped object
+    ray moved_ray = {vec3c_sub(r->orig, b->offset), r->dir, r->time};
+    if (!hittable_hit(b->obj, &moved_ray, tmin, tmax, rec)) return 0;
+
+    //Move back the hit point
     rec->p = vec3c_sum(rec->p, b->offset);
     hit_record_set_facenormal(rec, &moved_ray, &rec->normal);
     return 1;
 }
 
 
-int rotate_y_hit(rotate_y* ob, ray* r, double tmin, double tmax, hit_record* rec){
+///Test hit on a rotated object
+int rotate_hit(rotate* ob, ray* r, double tmin, double tmax, hit_record* rec){
+    //Rotate the incoming ray
     point3 origin = r->orig;
     vec3 direction = r->dir;
+    rotatePoint(r->orig, -ob->sin_theta, ob->cos_theta, ob->axis, &origin);
+    rotatePoint(r->dir, -ob->sin_theta, ob->cos_theta, ob->axis, &direction);
 
-    origin.x = ob->cos_theta * r->orig.x  -  ob->sin_theta * r->orig.z;
-    origin.z = ob->sin_theta * r->orig.x  +  ob->cos_theta * r->orig.z;
-
-    direction.x = ob->cos_theta * r->dir.x  -  ob->sin_theta * r->dir.z;
-    direction.z = ob->sin_theta * r->dir.x  +  ob->cos_theta * r->dir.z;
-
+    //Test on the wrapped object
     ray rotated_ray = {origin, direction, r->time};
-    if (!hittable_hit(ob->obj, &rotated_ray, tmin, tmax, rec))
-        return 0;
+    if (!hittable_hit(ob->obj, &rotated_ray, tmin, tmax, rec)) return 0;
 
+    //Revert rotation on the normal
     vec3 p = rec->p;
     vec3 normal = rec->normal;
-
-    p.x = ob->cos_theta * rec->p.x  +  ob->sin_theta * rec->p.z;
-    p.z = -ob->sin_theta * rec->p.x  +  ob->cos_theta * rec->p.z;
-
-    normal.x = ob->cos_theta * rec->normal.x  +  ob->sin_theta * rec->normal.z;
-    normal.z = -ob->sin_theta * rec->normal.x  +  ob->cos_theta * rec->normal.z;
-
+    rotatePoint(rec->p, ob->sin_theta, ob->cos_theta, ob->axis, &p);
+    rotatePoint(rec->normal, ob->sin_theta, ob->cos_theta, ob->axis, &normal);
     rec->p = p;
     hit_record_set_facenormal(rec, &rotated_ray, &normal);
-
     return 1;
 }
 
 
-
+///Test hit on a constant medium
 int constant_medium_hit(constant_medium* m, ray* r, double tmin, double tmax, hit_record* rec){
+    //double Test hit
     hit_record rec1, rec2;
-
     if (!hittable_hit(m->boundary, r, -HUGE_VAL, HUGE_VAL, &rec1)){return 0;}
-
     if (!hittable_hit(m->boundary, r, rec1.t+0.0001, HUGE_VAL, &rec2)){return 0;}
-
     if (rec1.t < tmin) rec1.t = tmin;
     if (rec2.t > tmax) rec2.t = tmax;
     if (rec1.t >= rec2.t) return 0;
-
     if (rec1.t < 0){rec1.t = 0;}
-
     const double ray_length = vec3_length(&r->dir);
     const double distance_inside_boundary = (rec2.t - rec1.t) * ray_length;
     const double hit_distance = m->neg_inv_density * log(random_double());
     if(hit_distance > distance_inside_boundary){return 0;}
 
+    //Register hit
     rec->t = rec1.t + hit_distance / ray_length;
     rec->p = ray_at(r, rec->t);
-
     rec->normal = (vec3){1,0,0};
     rec->front_face = 1;
     rec->mat = m->phase_function;
     return 1;
 }
-
-
 
 
 ///Generic function to test for ray hit
@@ -609,22 +583,27 @@ int hittable_hit(hittable* o, ray* r, double tmin, double tmax, hit_record* rec)
         return moving_sphere_hit((moving_sphere*)o->obj, r, tmin, tmax, rec);
     }else if (o->t == HITTABLE_BVH_NODE){
         return bvh_node_hit((bvh_node*)o->obj, r, tmin, tmax, rec);
-    }else if (o->t == HITTABLE_XYRECT){
-        return xy_rect_hit((xy_rect*)o->obj, r, tmin, tmax, rec);
-    }else if (o->t == HITTABLE_XZRECT){
-        return xz_rect_hit((xz_rect*)o->obj, r, tmin, tmax, rec);
-    }else if (o->t == HITTABLE_YZRECT){
-        return yz_rect_hit((yz_rect*)o->obj, r, tmin, tmax, rec);
+    }else if (o->t == HITTABLE_RECT){
+        return rect_hit((rect*)o->obj, r, tmin, tmax, rec);
     }else if (o->t == HITTABLE_BOX){
         return box_hit((box*)o->obj, r, tmin, tmax, rec);
     }else if (o->t == HITTABLE_TRANSLATE){
         return translate_hit((translate*)o->obj, r, tmin, tmax, rec);
-    }else if (o->t == HITTABLE_ROTATEY){
-        return rotate_y_hit((rotate_y*)o->obj, r, tmin, tmax, rec);
+    }else if (o->t == HITTABLE_ROTATE){
+        return rotate_hit((rotate*)o->obj, r, tmin, tmax, rec);
     }else if (o->t == HITTABLE_CONSTANT_MEDIUM){
         return constant_medium_hit((constant_medium*)o->obj, r, tmin, tmax, rec);
     }else{printf("!! Not implemented hittable_hit for type %d\n", o->t);return 0;}
 }
+
+
+
+
+
+
+
+
+
 
 
 
@@ -637,6 +616,7 @@ int hittable_hit(hittable* o, ray* r, double tmin, double tmax, hit_record* rec)
  * */
 
 
+///Get sphere bounding box
 int sphere_bounding_box(sphere* s, aabb* output_box){
     output_box->minimum = vec3c_sub(s->center, (vec3){s->r,s->r,s->r});
     output_box->maximum = vec3c_sum(s->center, (vec3){s->r,s->r,s->r});
@@ -644,6 +624,7 @@ int sphere_bounding_box(sphere* s, aabb* output_box){
 }
 
 
+///Get moving sphere bounding box
 int moving_sphere_bounding_box(moving_sphere* s, double t0, double t1, aabb* output_box){
     vec3 area = {s->r, s->r, s->r};
     aabb box0 = {vec3c_sub(moving_sphere_center(s, t0), area), vec3c_sum(moving_sphere_center(s, t0), area)};
@@ -655,50 +636,57 @@ int moving_sphere_bounding_box(moving_sphere* s, double t0, double t1, aabb* out
 }
 
 
-
+///Get BVH bounding box
 int bvh_node_bounding_box(bvh_node* node, aabb* output_box){
     *output_box = node->box;
     return 1;
 }
 
 
-int xy_rect_bounding_box(xy_rect* rect, aabb* output_box){
-    point3 a = {rect->x0, rect->y0, rect->k-0.0001};
-    point3 b = {rect->x1, rect->y1, rect->k+0.0001};
+///Get Rect bounding box
+int rect_bounding_box(rect* rect, aabb* output_box){
+    point3 a,b;
+    if (rect->axis == XY){
+        a = (point3){rect->x0, rect->y0, rect->k-0.0001};
+        b = (point3){rect->x1, rect->y1, rect->k+0.0001};
+    }else if(rect->axis == XZ){
+        a = (point3){rect->x0, rect->k-0.0001, rect->z0};
+        b = (point3){rect->x1, rect->k+0.0001, rect->z1};
+    }else{
+        a = (point3){rect->k-0.0001, rect->y0, rect->z0};
+        b = (point3){rect->k+0.0001, rect->y1, rect->z1};
+    }
     *output_box = (aabb){a, b};
-    return 1;}
-int xz_rect_bounding_box(xz_rect* rect, aabb* output_box){
-    point3 a = {rect->x0, rect->k-0.0001, rect->z0};
-    point3 b = {rect->x1, rect->k+0.0001, rect->z1};
-    *output_box = (aabb){a, b};
-    return 1;}
-int yz_rect_bounding_box(yz_rect* rect, aabb* output_box){
-    point3 a = {rect->k-0.0001, rect->y0, rect->z0};
-    point3 b = {rect->k+0.0001, rect->y1, rect->z1};
-    *output_box = (aabb){a, b};
-    return 1;}
+    return 1;
+}
 
 
+///Get Box bounding box
 int box_bounding_box(box* b, aabb* output_box){
     *output_box = (aabb){b->box_min, b->box_max};
     return 1;
 }
 
+
+///Get translated object bounding box
 int translate_bounding_box(translate* t, double t0, double t1, aabb* output_box){
     if (!hittable_bounding_box(t->obj, t0, t1, output_box)) return 0;
     *output_box = (aabb){vec3c_sum(output_box->minimum, t->offset), vec3c_sum(output_box->maximum, t->offset)};
     return 1;
 }
 
-int rotate_y_bounding_box(rotate_y* ob, aabb* output_box){
+
+///Get rotated object bounding box
+int rotate_bounding_box(rotate* ob, aabb* output_box){
     *output_box = ob->bbox;
     return ob->hasbox;
 }
 
+
+///Get const medium object bounding box
 int constant_medium_bounding_box(constant_medium* m, double t0, double t1, aabb* output_box){
     return hittable_bounding_box(m->boundary, t0, t1, output_box);
 }
-
 
 
 ///Generic function to test for ray hit
@@ -709,18 +697,14 @@ int hittable_bounding_box(hittable* o, double t0, double t1, aabb* output_box){
         return moving_sphere_bounding_box((moving_sphere*)o->obj, t0, t1, output_box);
     }else if (o->t == HITTABLE_BVH_NODE){
         return bvh_node_bounding_box((bvh_node*)o->obj, output_box);
-    }else if (o->t == HITTABLE_XYRECT){
-        return xy_rect_bounding_box((xy_rect*)o->obj, output_box);
-    }else if (o->t == HITTABLE_XZRECT){
-        return xz_rect_bounding_box((xz_rect*)o->obj, output_box);
-    }else if (o->t == HITTABLE_YZRECT){
-        return yz_rect_bounding_box((yz_rect*)o->obj, output_box);
+    }else if (o->t == HITTABLE_RECT){
+        return rect_bounding_box((rect*)o->obj, output_box);
     }else if (o->t == HITTABLE_BOX){
         return box_bounding_box((box*)o->obj, output_box);
     }else if (o->t == HITTABLE_TRANSLATE){
         return translate_bounding_box((translate*)o->obj, t0, t1, output_box);
-    }else if (o->t == HITTABLE_ROTATEY){
-        return rotate_y_bounding_box((rotate_y*)o->obj, output_box);
+    }else if (o->t == HITTABLE_ROTATE){
+        return rotate_bounding_box((rotate*)o->obj, output_box);
     }else if (o->t == HITTABLE_CONSTANT_MEDIUM){
         return constant_medium_bounding_box((constant_medium*)o->obj, t0, t1, output_box);
     }else{printf("!! Not implemented hittable_hit for type %d\n", o->t);return 0;}

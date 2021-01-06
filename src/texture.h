@@ -10,14 +10,17 @@
 
 
 
+/**
+ * Generic struc
+ * */
 
 typedef enum {TEXTURE_SOLID, TEXTURE_CHECKER, TEXTURE_NOISE, TEXTURE_IMAGE} texture_type;
+typedef struct {texture_type type; void* o;} texture;
 
 
-typedef struct {
-    texture_type type;
-    void* o;
-} texture;
+/**
+ * Instances
+ * */
 
 typedef struct{
     color color_value;
@@ -47,6 +50,7 @@ typedef struct{
  *
  * */
 
+//Init
 texture* texture_solid_color_init(color c);
 texture* texture_solid_color_init_rgb(double r, double g, double b);
 texture* texture_checker_init(texture* odd, texture* even);
@@ -55,12 +59,13 @@ texture* texture_noise_init_scaled(double sc);
 texture* texture_noise_init();
 texture* texture_image_init(char* filename);
 
+//Free
 void texture_free(texture* t);
-
 static texture* textures_allocated[1024];
 static int textures_index = 0;
 void textures_free_all();
 
+//Feature
 color texture_value(texture* t, double u, double v, vec3* p);
 
 #endif // __TEXTURE_H_
