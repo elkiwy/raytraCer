@@ -8,7 +8,6 @@
 #include "ray.h"
 #include "hittable.h"
 #include "texture.h"
-#include "onb.h"
 
 //Forward declaration of hit record
 struct hit_record;
@@ -17,7 +16,7 @@ struct hit_record;
 
 //Generic material struct
 typedef enum{MATERIAL_LAMBERTIAN, MATERIAL_METAL, MATERIAL_DIELECTRIC, MATERIAL_LIGHT, MATERIAL_ISOTROPIC} material_type;
-typedef struct material {material_type type; void* mat;}material;
+typedef struct{material_type type; void* mat;}material;
 
 //Materials
 typedef struct{texture* albedo;}material_lambertian;
@@ -44,8 +43,7 @@ static int materials_index = 0;
 void materials_free_all();
 
 //Features
-int material_scatter(material* mat, ray* r, struct hit_record* rec, color* albedo, ray* scattered, double* pdf);
-double material_scattering_pdf(material* mat, ray* r, struct hit_record* rec, ray* scattered);
-color material_emitted(material* mat, struct hit_record* rec, double u, double v, point3 p);
+int material_scatter(material* mat, ray* r, struct hit_record* rec, color* attenuation, ray* scattered);
+color material_emitted(material* mat, double u, double v, point3 p);
 
 #endif // __MATERIAL_H_

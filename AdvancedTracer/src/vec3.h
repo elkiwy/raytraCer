@@ -75,7 +75,6 @@ vec3 vec3_random_in_hemisphere(vec3* normal);
 vec3 random_in_unit_disk();
 
 
-vec3 random_cosine_direction();
 
 
 

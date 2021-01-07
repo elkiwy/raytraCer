@@ -51,7 +51,6 @@ typedef enum {
     HITTABLE_TRANSLATE,
     HITTABLE_ROTATE,
     HITTABLE_CONSTANT_MEDIUM,
-    HITTABLE_FLIP_FACE,
 } hittable_type;
 
 ///Generic abstract hittable object
@@ -106,8 +105,6 @@ typedef struct {hittable* obj; vec3 offset;}translate;
 //TODO implement all other rotation in a single object
 typedef enum {X, Y, Z} rotation_axis;
 typedef struct {hittable* obj; double sin_theta; double cos_theta; int hasbox; aabb bbox; rotation_axis axis;}rotate;
-///Hittable object Wrapper to flip normals
-typedef struct {hittable* obj;}flip_face;
 
 
 
@@ -129,7 +126,6 @@ hittable* hittable_translate_init(struct hittable_list* world, hittable* obj, ve
 hittable* hittable_rotate_init(struct hittable_list* world, hittable* obj, double angle, rotation_axis axis);
 hittable* hittable_constant_medium_init(struct hittable_list* world, hittable* b, double d, texture* a);
 hittable* hittable_constant_medium_init_c(struct hittable_list* world, hittable* b, double d, color c);
-hittable* hittable_flip_face_init(struct hittable_list* world, hittable* b);
 
 //Deinit
 void hittable_free(hittable* o);
@@ -138,7 +134,5 @@ void hittable_free(hittable* o);
 int hittable_hit(hittable* o, ray* r, double tmin, double tmax, hit_record* rec);
 int hittable_bounding_box(hittable* o, double t0, double t1, aabb* output_box);
 
-double hittable_pdf_value(hittable* o, point3 orig, vec3 v);
-vec3 hittable_random(hittable* o, point3 orig);
 
 #endif // __HITTABLE_H_

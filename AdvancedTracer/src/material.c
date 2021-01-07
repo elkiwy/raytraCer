@@ -117,23 +117,13 @@ material* material_isotropic_new_from_color(color c){
 
 
 ///Scatter a ray that hits a lambertian material
-int material_lambertian_scatter(material_lambertian* mat, ray*r, hit_record* rec, color* attenuation, ray* scattered, double* pdf){
-
-    onb uvw;
-    onb_init_from_w(&uvw, &rec->normal);
-
-    vec3 direction = onb_localv(&uvw, random_cosine_direction());
-
-
-
+int material_lambertian_scatter(material_lambertian* mat, ray*r, hit_record* rec, color* attenuation, ray* scattered){
     //Scatter the ray following the normal of the hit, and slightly randomize it
-    //vec3 scatter_direction = vec3c_sum(rec->normal, vec3_random_unit_vector_in_unit_sphere());
+    vec3 scatter_direction = vec3c_sum(rec->normal, vec3_random_unit_vector_in_unit_sphere());
     //Check for near zero scattered directions
-    //if (vec3_is_near_zero(&scatter_direction)){scatter_direction = rec->normal;}
-
-    *scattered = (ray){rec->p, vec3_unit(&direction), r->time};
+    if (vec3_is_near_zero(&scatter_direction)){scatter_direction = rec->normal;}
+    *scattered = (ray){rec->p, scatter_direction, r->time};
     *attenuation = texture_value(mat->albedo, rec->u, rec->v, &rec->p);
-    *pdf = vec3_dot(&uvw.axis[2], &scattered->dir) / PI;
     return 1;
 }
 
@@ -188,17 +178,17 @@ int material_isotropic_scatter(material_isotropic* mat, ray*r, hit_record* rec, 
 
 
 ///Generic scatter material
-int material_scatter(material* mat, ray* r, hit_record* rec, color* albedo, ray* scattered, double* pdf){
+int material_scatter(material* mat, ray* r, hit_record* rec, color* attenuation, ray* scattered){
     if(mat->type == MATERIAL_LAMBERTIAN){
-        return material_lambertian_scatter((material_lambertian*)mat->mat, r, rec, albedo, scattered, pdf);
+        return material_lambertian_scatter((material_lambertian*)mat->mat, r, rec, attenuation, scattered);
     }else if(mat->type == MATERIAL_DIELECTRIC){
-        return material_dielectric_scatter((material_dielectric*)mat->mat, r, rec, albedo, scattered);
+        return material_dielectric_scatter((material_dielectric*)mat->mat, r, rec, attenuation, scattered);
     }else if(mat->type == MATERIAL_METAL){
-        return material_metal_scatter((material_metal*)mat->mat, r, rec, albedo, scattered);
+        return material_metal_scatter((material_metal*)mat->mat, r, rec, attenuation, scattered);
     }else if(mat->type == MATERIAL_LIGHT){
         return material_light_scatter();
     }else if(mat->type == MATERIAL_ISOTROPIC){
-        return material_isotropic_scatter((material_isotropic*)mat->mat, r, rec, albedo, scattered);
+        return material_isotropic_scatter((material_isotropic*)mat->mat, r, rec, attenuation, scattered);
     }else{printf("material_scatter nor implemented for material type %d\n", mat->type); return 0;}
 }
 
@@ -209,43 +199,20 @@ int material_scatter(material* mat, ray* r, hit_record* rec, color* albedo, ray*
 
 
 /**
- * PDF scattering
- */
-
-double material_lambertian_scattering_pdf(material_lambertian* mat, ray* r, hit_record* rec, ray* scattered){
-    double cosine = vec3c_dot(rec->normal, vec3_unit(&scattered->dir));
-    return cosine < 0 ? 0 : cosine / PI;
-}
-
-
-
-double material_scattering_pdf(material* mat, ray* r, hit_record* rec, ray* scattered){
-    if(mat->type == MATERIAL_LAMBERTIAN){
-        return material_lambertian_scattering_pdf((material_lambertian*)mat->mat, r, rec, scattered);
-    }else{printf("material_scattering_pdf nor implemented for material type %d\n", mat->type); return 0;}
-}
-
-
-
-/**
  * Material Emission
  */
 
 ///Light emission
-color material_light_emitted(material_light* light, hit_record* rec, double u, double v, point3 p){
-    if(rec->front_face){
-        return texture_value(light->emit, u, v, &p);
-    }else{
-        return (color){0,0,0};
-    }
+color material_light_emitted(material_light* light, double u, double v, point3 p){
+    return texture_value(light->emit, u, v, &p);
 }
 
 
 ///Material emission
-color material_emitted(material* mat, hit_record* rec, double u, double v, point3 p){
+color material_emitted(material* mat, double u, double v, point3 p){
     //Return the emitted color
     if(mat->type == MATERIAL_LIGHT){
-        return material_light_emitted((material_light*)mat->mat, rec, u, v, p);
+        return material_light_emitted((material_light*)mat->mat, u, v, p);
     //Else is not emmitting
     }else{return (color){0,0,0};}
 }

@@ -16,13 +16,9 @@ typedef struct{
 }perlin;
 
 
-//Init
+
 perlin* perlin_init();
-
-//Free
 void perlin_free(perlin* p);
-
-//Features
 double perlin_noise(perlin* p, point3 point);
 double turb_rec(perlin* perl, point3 p, int depth);
 double perlin_turb(perlin* perl, point3 p);

@@ -305,13 +305,6 @@ hittable* hittable_constant_medium_init_c(struct hittable_list* world, hittable*
 }
 
 
-///Create a flip face wrapper around a hittable object
-hittable* hittable_flip_face_init(struct hittable_list* world, hittable* obj){
-    flip_face* flipped = malloc(sizeof(flip_face));
-    flipped->obj = obj;
-    //Make generic wrapper and return
-    return hittable_generic_new(world, HITTABLE_FLIP_FACE, flipped);
-}
 
 
 
@@ -358,10 +351,6 @@ void hittable_free(hittable* o){
     }else if(o->t == HITTABLE_CONSTANT_MEDIUM){
         constant_medium* m = o->obj;
         hittable_free(m->boundary);
-
-    }else if(o->t == HITTABLE_FLIP_FACE){
-        flip_face* m = o->obj;
-        hittable_free(m->obj);
     }
     free(o->obj);
     free(o);
@@ -586,13 +575,6 @@ int constant_medium_hit(constant_medium* m, ray* r, double tmin, double tmax, hi
 }
 
 
-int flip_face_hit(flip_face* f, ray* r, double tmin, double tmax, hit_record* rec){
-    if (!hittable_hit(f->obj, r, tmin, tmax, rec))return 0;
-    rec->front_face = !rec->front_face;
-    return 1;
-}
-
-
 ///Generic function to test for ray hit
 int hittable_hit(hittable* o, ray* r, double tmin, double tmax, hit_record* rec){
     if (o->t == HITTABLE_SPHERE){
@@ -611,8 +593,6 @@ int hittable_hit(hittable* o, ray* r, double tmin, double tmax, hit_record* rec)
         return rotate_hit((rotate*)o->obj, r, tmin, tmax, rec);
     }else if (o->t == HITTABLE_CONSTANT_MEDIUM){
         return constant_medium_hit((constant_medium*)o->obj, r, tmin, tmax, rec);
-    }else if (o->t == HITTABLE_FLIP_FACE){
-        return flip_face_hit((flip_face*)o->obj, r, tmin, tmax, rec);
     }else{printf("!! Not implemented hittable_hit for type %d\n", o->t);return 0;}
 }
 
@@ -709,12 +689,6 @@ int constant_medium_bounding_box(constant_medium* m, double t0, double t1, aabb*
 }
 
 
-///Get flip face object bounding box
-int flip_face_bounding_box(flip_face* m, double t0, double t1, aabb* output_box){
-    return hittable_bounding_box(m->obj, t0, t1, output_box);
-}
-
-
 ///Generic function to test for ray hit
 int hittable_bounding_box(hittable* o, double t0, double t1, aabb* output_box){
     if (o->t == HITTABLE_SPHERE){
@@ -733,68 +707,5 @@ int hittable_bounding_box(hittable* o, double t0, double t1, aabb* output_box){
         return rotate_bounding_box((rotate*)o->obj, output_box);
     }else if (o->t == HITTABLE_CONSTANT_MEDIUM){
         return constant_medium_bounding_box((constant_medium*)o->obj, t0, t1, output_box);
-    }else if (o->t == HITTABLE_FLIP_FACE){
-        return flip_face_bounding_box((flip_face*)o->obj, t0, t1, output_box);
     }else{printf("!! Not implemented hittable_hit for type %d\n", o->t);return 0;}
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-double hittable_rect_pdf_value(rect* rect, point3 orig, vec3 v){
-
-    if(rect->axis == XZ){
-        hit_record rec;
-        ray r = {orig, v, 0};
-        if(!rect_hit(rect, &r, 0.0001, HUGE_VAL, &rec)){return 0;}
-
-        double area = (rect->x1-rect->x0)*(rect->z1-rect->z0);
-        double distance_squared = rec.t * rec.t * vec3_length_squared(&v);
-        double cosine = fabs(vec3_dot(&v, &rec.normal) / vec3_length(&v));
-
-        return distance_squared / (cosine * area);
-    }else{
-        //TODO
-        return 0.0;
-    }
-}
-
-
-
-double hittable_pdf_value(hittable* o, point3 orig, vec3 v){
-    if (o->t == HITTABLE_RECT){
-        return hittable_rect_pdf_value((rect*)o->obj, orig, v);
-    }else{
-        return 0.0;
-    }
-}
-
-
-
-
-
-vec3 hittable_rect_random(rect* rect, point3 orig){
-    point3 random_point = {random_double_scaled(rect->x0, rect->x1), rect->k, random_double_scaled(rect->z0, rect->z1)};
-    return vec3c_sub(random_point, orig);
-}
-
-vec3 hittable_random(hittable* o, point3 orig){
-    if (o->t == HITTABLE_RECT){
-        return hittable_rect_random((rect*)o->obj, orig);
-    }else{
-        return (vec3){1,0,0};
-    }
 }

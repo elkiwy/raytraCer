@@ -14,7 +14,6 @@
 #include "camera.h"
 #include "utils.h"
 #include "material.h"
-#include "pdf.h"
 
 //STB Image write to output png
 #include "extern_stb_image_write.h"
@@ -42,37 +41,25 @@ void write_color(unsigned char* pixels, color* pixel_color, int samples_per_pixe
 
 
 ///Cast a ray into the world and retrieve the color of that ray
-color ray_color(ray* r, color* background, hittable_list* world, hittable* lights, int recursion_depth){
+color ray_color(ray* r, color* background, hittable_list* world, int recursion_depth){
     //Base case of recursion
     if (recursion_depth <= 0){return (color){0,0,0};}
 
     //If the ray doesn't hits anything, take the color of the background
     hit_record rec;
     if (hittable_list_hit(world, r, 0.001, HUGE_VAL, &rec) == 0){return *background;}
+    ray scattered;
+    color attenuation;
 
     //If the thing I hit is emitting something, take the emitted color
-    color emitted = material_emitted(rec.mat, &rec, rec.u, rec.v, rec.p);
-    ray scattered;
-    double pdf_val;
-    color albedo;
+    color emitted = material_emitted((material*)rec.mat, rec.u, rec.v, rec.p);
+
     //If the hit wasn't scattered take the emitted color (could be also just a black if it wasn't emitting anything)
-    if (material_scatter(rec.mat, r, &rec, &albedo, &scattered, &pdf_val) == 0){return emitted;}
-
-
-
-    pdf* p = pdf_hittable_init(lights, rec.p);
-    scattered = (ray){rec.p, pdf_generate(p), r->time};
-    pdf_val = pdf_value(p, &scattered.dir);
-    pdf_free(p);
-
-
-
+    if (material_scatter((material*)rec.mat, r, &rec, &attenuation, &scattered) == 0){return emitted;}
 
     //else Recursively take the color of the scattered ray and multiply its color by the attenuation color
-    color scattered_pdf_color = vec3_mul_k(&albedo,  material_scattering_pdf(rec.mat, r, &rec, &scattered));
-    color scattered_ray_color = ray_color(&scattered, background, world, lights, recursion_depth-1);
-    color scattered_ray_color_weighted_by_pdf = vec3_div_k(&scattered_ray_color, pdf_val);
-    return vec3c_sum(emitted, vec3_mul(&scattered_pdf_color, &scattered_ray_color_weighted_by_pdf));
+    color scattered_ray_color = ray_color(&scattered, background, world, recursion_depth-1);
+    return vec3c_sum(emitted, vec3_mul(&attenuation, &scattered_ray_color));
 }
 
 
@@ -97,7 +84,7 @@ hittable_list* setup_scene(){
 
     //Add the ground object
     material* material_ground = material_lambertian_new(ground_texture);
-    hittable* g = hittable_sphere_new(world,  (point3){0, -1000, 0}, 1000,  material_ground);
+    hittable* g = hittable_sphere_new(world,  (point3){0, -1000, 0}, 1000,  (struct material*)material_ground);
 
     //Add small random spheres
     for (int a=-11; a<11; a++){
@@ -113,18 +100,18 @@ hittable_list* setup_scene(){
                     sphere_mat = material_lambertian_new_from_color(albedo);
 
                     point3 center2 = vec3c_sum(center, (vec3){0, random_double_scaled(0, 0.5), 0});
-                    hittable_moving_sphere_new(world, center, center2, 0.0, 1.0, 0.2, sphere_mat);
+                    hittable_moving_sphere_new(world, center, center2, 0.0, 1.0, 0.2, (struct material*)sphere_mat);
 
                 }else if(choose_mat < 0.95){
                     //metal
                     color albedo = vec3_random_scaled(0.5, 1);
                     double fuzz = random_double_scaled(0, 0.5);
                     sphere_mat = material_metal_new(albedo, fuzz);
-                    hittable_sphere_new(world, center, 0.2, sphere_mat);
+                    hittable_sphere_new(world, center, 0.2, (struct material*)sphere_mat);
                 }else{
                     //glass
                     sphere_mat = material_dielectric_new(1.5);
-                    hittable_sphere_new(world, center, 0.2, sphere_mat);
+                    hittable_sphere_new(world, center, 0.2, (struct material*)sphere_mat);
                 }
             }
         }
@@ -132,11 +119,11 @@ hittable_list* setup_scene(){
 
     //Add 3 big shperes with different materials and return
     material* material1 = material_dielectric_new(1.5);
-    hittable* h1 = hittable_sphere_new(world, (point3){0, 1, 0}, 1.0, material1);
+    hittable* h1 = hittable_sphere_new(world, (point3){0, 1, 0}, 1.0, (struct material*)material1);
     material* material2 = material_lambertian_new(ball_texture);
-    hittable* h2 = hittable_sphere_new(world, (point3){-4, 1, 0}, 1.0, material2);
+    hittable* h2 = hittable_sphere_new(world, (point3){-4, 1, 0}, 1.0, (struct material*)material2);
     material* material3 = material_metal_new((color){0.7, 0.6, 0.5}, 0.0);
-    hittable* h3 = hittable_sphere_new(world,  (point3){4, 1, 0}, 1.0, material3);
+    hittable* h3 = hittable_sphere_new(world,  (point3){4, 1, 0}, 1.0, (struct material*)material3);
     return world;
 }
 
@@ -148,8 +135,8 @@ hittable_list* two_spheres(){
     texture* texture2 = texture_solid_color_init_rgb(0.2, 0.2, 0.2);
     texture* tex = texture_checker_init(texture1, texture2);
     material* mat1 = material_lambertian_new(tex);
-    hittable* s1 = hittable_sphere_new(world, (point3){0, -10, 0}, 10, mat1);
-    hittable* s2 = hittable_sphere_new(world, (point3){0,  10, 0}, 10, mat1);
+    hittable* s1 = hittable_sphere_new(world, (point3){0, -10, 0}, 10, (struct material*)mat1);
+    hittable* s2 = hittable_sphere_new(world, (point3){0,  10, 0}, 10, (struct material*)mat1);
     return world;
 }
 
@@ -160,8 +147,8 @@ hittable_list* two_perlin_spheres(){
     texture* pertext = texture_noise_init_scaled(4);
     material* mat1 = material_lambertian_new(pertext);
     material* mat2 = material_lambertian_new(pertext);
-    hittable* s1 = hittable_sphere_new(world, (point3){0, -1000, 0}, 1000, mat1);
-    hittable* s2 = hittable_sphere_new(world, (point3){0,  2, 0}, 2, mat1);
+    hittable* s1 = hittable_sphere_new(world, (point3){0, -1000, 0}, 1000, (struct material*)mat1);
+    hittable* s2 = hittable_sphere_new(world, (point3){0,  2, 0}, 2, (struct material*)mat1);
     return world;
 }
 
@@ -171,7 +158,7 @@ hittable_list* earth(){
     hittable_list* world = hittable_list_new(1024);
     texture* earthtexture = texture_image_init("images/earthmap.jpg");
     material* earthsurface = material_lambertian_new(earthtexture);
-    hittable* globe = hittable_sphere_new(world, (point3){0, 0, 0}, 2, earthsurface);
+    hittable* globe = hittable_sphere_new(world, (point3){0, 0, 0}, 2, (struct material*)earthsurface);
     return world;
 }
 
@@ -181,10 +168,10 @@ hittable_list* simple_light(){
     hittable_list* world = hittable_list_new(1024);
     texture* pertext = texture_noise_init_scaled(4);
     material* mat1 = material_lambertian_new(pertext);
-    hittable* s1 = hittable_sphere_new(world, (point3){0, -1000, 0}, 1000, mat1);
-    hittable* s2 = hittable_sphere_new(world, (point3){0,  2, 0}, 2, mat1);
+    hittable* s1 = hittable_sphere_new(world, (point3){0, -1000, 0}, 1000, (struct material*)mat1);
+    hittable* s2 = hittable_sphere_new(world, (point3){0,  2, 0}, 2, (struct material*)mat1);
     material* difflight = material_light_new_from_color((color){4,4,4});
-    hittable* l1 = hittable_rect_new(world, 3, 5, 1, 3, 0,0, -2,  XY, difflight);
+    hittable* l1 = hittable_rect_new(world, 3, 5, 1, 3, 0,0, -2,  XY, (struct material*)difflight);
     return world;
 }
 
@@ -192,27 +179,22 @@ hittable_list* simple_light(){
 ///Cornel box
 hittable_list* cornell_box(){
     hittable_list* world = hittable_list_new(1024);
-
     material* red = material_lambertian_new_from_color((color){0.65, 0.05, 0.05});
     material* whi = material_lambertian_new_from_color((color){0.73, 0.73, 0.73});
     material* gre = material_lambertian_new_from_color((color){0.12, 0.45, 0.15});
-
-    hittable* b1 = hittable_rect_new(world, 0,0, 0, 555, 0, 555, 555, YZ, gre);
-    hittable* b2 = hittable_rect_new(world, 0,0, 0, 555, 0, 555, 0, YZ, red);
-
     material* lig = material_light_new_from_color((color){15,15,15});
-    hittable* b3 = hittable_rect_new(NULL, 213, 343, 0,0, 227, 332, 554, XZ, lig);
-    b3 = hittable_flip_face_init(world, b3);
+    hittable* b1 = hittable_rect_new(world, 0,0, 0, 555, 0, 555, 555, YZ, (struct material*)gre);
+    hittable* b2 = hittable_rect_new(world, 0,0, 0, 555, 0, 555, 0, YZ, (struct material*)red);
 
-    hittable* b4 = hittable_rect_new(world, 0, 555, 0,0, 0, 555, 0, XZ, whi);
-    hittable* b5 = hittable_rect_new(world, 0, 555, 0,0, 0, 555, 555, XZ, whi);
-    hittable* b6 = hittable_rect_new(world, 0, 555, 0, 555, 0,0, 555, XY, whi);
+    hittable* b3 = hittable_rect_new(world, 213, 343, 0,0, 227, 332, 554, XZ, (struct material*)lig);
+    hittable* b4 = hittable_rect_new(world, 0, 555, 0,0, 0, 555, 0, XZ, (struct material*)whi);
+    hittable* b5 = hittable_rect_new(world, 0, 555, 0,0, 0, 555, 555, XZ, (struct material*)whi);
 
-    hittable* box1 = hittable_box_new(NULL, (point3){0,0,0}, (point3){165,330,165}, whi);
-    box1 = hittable_rotate_init(NULL, box1, 15, Y);
+    hittable* b6 = hittable_rect_new(world, 0, 555, 0, 555, 0,0, 555, XY, (struct material*)whi);
+    hittable* box1 = hittable_box_new(NULL, (point3){0,0,0}, (point3){165,330,165}, (struct material*)whi);
+    box1 = hittable_rotate_init(NULL, box1, 15, X);
     box1 = hittable_translate_init(world, box1, (vec3){265, 0, 295});
-
-    hittable* box2 = hittable_box_new(NULL, (point3){0,0,0}, (point3){165,165,165}, whi);
+    hittable* box2 = hittable_box_new(NULL, (point3){0,0,0}, (point3){165,165,165}, (struct material*)whi);
     box2 = hittable_rotate_init(NULL, box2, -18, Y);
     box2 = hittable_translate_init(world, box2, (vec3){130, 0, 65});
     return world;
@@ -226,17 +208,17 @@ hittable_list* cornell_smoke(){
     material* whi = material_lambertian_new_from_color((color){0.73, 0.73, 0.73});
     material* gre = material_lambertian_new_from_color((color){0.12, 0.45, 0.15});
     material* lig = material_light_new_from_color((color){15,15,15});
-    hittable* b1 = hittable_rect_new(world, 0,0, 0, 555, 0, 555, 555, YZ, gre);
-    hittable* b2 = hittable_rect_new(world, 0,0, 0, 555, 0, 555, 0, YZ, red);
-    hittable* b3 = hittable_rect_new(world, 213, 343, 0,0, 227, 332, 554, XZ, lig);
-    hittable* b4 = hittable_rect_new(world, 0, 555, 0,0, 0, 555, 0, XZ, whi);
-    hittable* b5 = hittable_rect_new(world, 0, 555, 0,0, 0, 555, 555, XZ, whi);
-    hittable* b6 = hittable_rect_new(world, 0, 555, 0, 555, 0,0, 555, XY, whi);
-    hittable* box1 = hittable_box_new(NULL, (point3){0,0,0}, (point3){165,330,165}, whi);
+    hittable* b1 = hittable_rect_new(world, 0,0, 0, 555, 0, 555, 555, YZ, (struct material*)gre);
+    hittable* b2 = hittable_rect_new(world, 0,0, 0, 555, 0, 555, 0, YZ, (struct material*)red);
+    hittable* b3 = hittable_rect_new(world, 213, 343, 0,0, 227, 332, 554, XZ, (struct material*)lig);
+    hittable* b4 = hittable_rect_new(world, 0, 555, 0,0, 0, 555, 0, XZ, (struct material*)whi);
+    hittable* b5 = hittable_rect_new(world, 0, 555, 0,0, 0, 555, 555, XZ, (struct material*)whi);
+    hittable* b6 = hittable_rect_new(world, 0, 555, 0, 555, 0,0, 555, XY, (struct material*)whi);
+    hittable* box1 = hittable_box_new(NULL, (point3){0,0,0}, (point3){165,330,165}, (struct material*)whi);
     box1 = hittable_rotate_init(NULL, box1, 15, Y);
     box1 = hittable_translate_init(NULL, box1, (vec3){265, 0, 295});
     box1 = hittable_constant_medium_init_c(world, box1, 0.01, (color){0,0,0});
-    hittable* box2 = hittable_box_new(NULL, (point3){0,0,0}, (point3){165,165,165}, whi);
+    hittable* box2 = hittable_box_new(NULL, (point3){0,0,0}, (point3){165,165,165}, (struct material*)whi);
     box2 = hittable_rotate_init(NULL, box2, -18, Y);
     box2 = hittable_translate_init(NULL, box2, (vec3){130, 0, 65});
     box2 = hittable_constant_medium_init_c(world, box2, 0.01, (color){1,1,1});
@@ -259,7 +241,7 @@ hittable_list* final_scene(){
             double x1 = x0 + w;
             double y1 = random_double_scaled(1,101);
             double z1 = z0 + w;
-            hittable_box_new(boxes1, (point3){x0,y0,z0}, (point3){x1,y1,z1}, ground);
+            hittable_box_new(boxes1, (point3){x0,y0,z0}, (point3){x1,y1,z1}, (struct material*)ground);
         }
     }
 
@@ -269,37 +251,37 @@ hittable_list* final_scene(){
 
     //Setup light
     material* light = material_light_new_from_color((color){7,7,7});
-    hittable_rect_new(objects, 123, 423, 0,0, 147, 412, 554, XZ, light);
+    hittable_rect_new(objects, 123, 423, 0,0, 147, 412, 554, XZ, (struct material*)light);
 
     //Moving sphere
     point3 center1 = (point3){400, 400, 200};
     point3 center2 = vec3c_sum(center1, (vec3){30,0,0});
     material* moving_sphere_material = material_lambertian_new_from_color((color){0.7,0.3,0.1});
-    hittable_moving_sphere_new(objects, center1, center2, 0, 1, 50, moving_sphere_material);
+    hittable_moving_sphere_new(objects, center1, center2, 0, 1, 50, (struct material *)moving_sphere_material);
 
     //Glass ball
-    hittable_sphere_new(objects, (point3){260,150,45}, 50, material_dielectric_new(1.5));
+    hittable_sphere_new(objects, (point3){260,150,45}, 50, (struct material *)material_dielectric_new(1.5));
 
     //Metal ball
-    hittable_sphere_new(objects, (point3){0,150,145}, 50, material_metal_new((color){0.8,0.8,0.8}, 1.0));
+    hittable_sphere_new(objects, (point3){0,150,145}, 50, (struct material *)material_metal_new((color){0.8,0.8,0.8}, 1.0));
 
     //Gas ball
-    hittable* boundary = hittable_sphere_new(NULL, (point3){360,150,145}, 70, material_dielectric_new(1.5));
+    hittable* boundary = hittable_sphere_new(NULL, (point3){360,150,145}, 70, (struct material *)material_dielectric_new(1.5));
     hittable_constant_medium_init_c(objects, boundary, 0.025, (color){0.2,0.4,0.9});
 
     //Huge light smoke area
-    boundary = hittable_sphere_new(NULL, (point3){0,0,0}, 5000, material_dielectric_new(1.5));
+    boundary = hittable_sphere_new(NULL, (point3){0,0,0}, 5000, (struct material *)material_dielectric_new(1.5));
     hittable_constant_medium_init_c(objects, boundary, 0.0001, (color){1,1,1});
 
     //Perline noise
     texture* pertext = texture_noise_init_scaled(5);
-    hittable_sphere_new(objects, (point3){220,280,300}, 80, material_lambertian_new(pertext));
+    hittable_sphere_new(objects, (point3){220,280,300}, 80, (struct material *)material_lambertian_new(pertext));
 
     //1000 small spheres grouped, translated, and rotated
     hittable_list* boxes2 = hittable_list_new_no_gc(1024);
     material* white = material_lambertian_new_from_color((color){0.73, 0.73, 0.73});
     int ns = 1000;
-    for (int j = 0; j < ns; j++) {hittable_sphere_new(boxes2, vec3_random_scaled(0,165), 10, white);}
+    for (int j = 0; j < ns; j++) {hittable_sphere_new(boxes2, vec3_random_scaled(0,165), 10, (struct material *)white);}
     hittable* bvh = bvh_node_init(NULL, boxes2, 0, 1);
     hittable* rotated = hittable_rotate_init(NULL, bvh, 15, Y);
     hittable* translated = hittable_translate_init(objects, rotated, (vec3){-100, 270, 395});
@@ -405,17 +387,12 @@ int main(int argc, char** argv) {
     }
 
     //Init camera
-    const int IMAGE_WIDTH = 1024;
+    const int IMAGE_WIDTH = 1024/8;
     const int IMAGE_HEIGHT = (int)(IMAGE_WIDTH / ASPECT_RATIO);
-    const int samples_per_pixel = 10; //how many ray per pixel
-    const int max_recursion_depth = 20; //how deep the ray scattering goes
+    const int samples_per_pixel = 32; //how many ray per pixel
+    const int max_recursion_depth = 8; //how deep the ray scattering goes
     camera* c = camera_new(lookfrom, lookat, vup, vfov, ASPECT_RATIO, aperture, dist_to_focus, 0.0, 1.0);
 
-
-
-
-    material* THIS_CAN_BE_NULL_FIX_TODO = material_lambertian_new_from_color((color){0.73, 0.73, 0.73});
-    hittable* lights = hittable_rect_new(NULL, 213, 343, 0,0, 227, 332, 554, XZ, THIS_CAN_BE_NULL_FIX_TODO);
 
     /**
      *
@@ -452,7 +429,7 @@ int main(int argc, char** argv) {
                     double u = ((double)i+random_double()) / (double)(IMAGE_WIDTH - 1);
                     double v = ((double)j+random_double()) / (double)(IMAGE_HEIGHT - 1);
                     ray r = camera_get_ray(c, u, v);
-                    pixel_color = vec3c_sum(pixel_color, ray_color(&r, &background, world, lights, max_recursion_depth));
+                    pixel_color = vec3c_sum(pixel_color, ray_color(&r, &background, world, max_recursion_depth));
                 }
 
                 //Output the result color into the file
