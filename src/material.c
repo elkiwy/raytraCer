@@ -1,5 +1,6 @@
 #include "material.h"
 
+#include "pdf.h"
 
 
 
@@ -117,44 +118,30 @@ material* material_isotropic_new_from_color(color c){
 
 
 ///Scatter a ray that hits a lambertian material
-int material_lambertian_scatter(material_lambertian* mat, ray*r, hit_record* rec, color* attenuation, ray* scattered, double* pdf){
-
-    onb uvw;
-    onb_init_from_w(&uvw, &rec->normal);
-
-    vec3 direction = onb_localv(&uvw, random_cosine_direction());
-
-
-
-    //Scatter the ray following the normal of the hit, and slightly randomize it
-    //vec3 scatter_direction = vec3c_sum(rec->normal, vec3_random_unit_vector_in_unit_sphere());
-    //Check for near zero scattered directions
-    //if (vec3_is_near_zero(&scatter_direction)){scatter_direction = rec->normal;}
-
-    *scattered = (ray){rec->p, vec3_unit(&direction), r->time};
-    *attenuation = texture_value(mat->albedo, rec->u, rec->v, &rec->p);
-    *pdf = vec3_dot(&uvw.axis[2], &scattered->dir) / PI;
+int material_lambertian_scatter(material_lambertian* mat, ray*r, hit_record* rec, scatter_record* srec){
+    srec->attenuation = texture_value(mat->albedo, rec->u, rec->v, &rec->p);
+    srec->is_specular = 0;
+    srec->pdf_ptr = pdf_cosine_init(&rec->normal);
     return 1;
 }
 
 
 ///Scatter a ray that hits a metal material
-int material_metal_scatter(material_metal* mat, ray*r, hit_record* rec, color* attenuation, ray* scattered){
+int material_metal_scatter(material_metal* mat, ray*r, hit_record* rec, scatter_record* srec){
     //Scatter the ray reflecting it using the normal as bisector
     vec3 reflected = vec3c_reflect(vec3_unit(&r->dir), rec->normal);
-    //Randomize it with fuzz
-    vec3 scattered_direction = vec3c_sum(reflected, vec3c_mul_k(vec3_random_in_unit_sphere(), mat->fuzz));
-    *scattered = (ray){rec->p, scattered_direction, r->time};
-    *attenuation = mat->albedo;
-    double a = vec3_dot(&scattered->dir, &rec->normal);
-    return a > 0;
+    srec->specular_ray = (ray){rec->p, vec3c_sum(reflected, vec3c_mul_k(vec3_random_in_unit_sphere(), mat->fuzz)), r->time};
+    srec->attenuation = mat->albedo;
+    srec->is_specular = 1;
+    srec->pdf_ptr = NULL;
+    return 1;
 }
 
 
 ///Reflectance formula
 double reflectance(double cosine, double ref_idx){double r0 = (1-ref_idx) / (1+ref_idx); r0 = r0*r0; return r0 + (1-r0)*pow((1-cosine),5);}
 ///Scatter a ray that hits a dielectric material
-int material_dielectric_scatter(material_dielectric* mat, ray*r, hit_record* rec, color* attenuation, ray* scattered){
+int material_dielectric_scatter(material_dielectric* mat, ray*r, hit_record* rec, scatter_record* srec){
     double refraction_ratio = rec->front_face ? (1.0/mat->ir) : mat->ir;
     vec3 unit_dir = vec3_unit(&r->dir);
 
@@ -167,8 +154,10 @@ int material_dielectric_scatter(material_dielectric* mat, ray*r, hit_record* rec
         direction = vec3_reflect(&unit_dir, &rec->normal);
     }else{
         direction = vec3c_refract(unit_dir, rec->normal, refraction_ratio);}
-    *scattered = (ray){rec->p, direction, r->time};
-    *attenuation = (color){1,1,1};
+    srec->specular_ray = (ray){rec->p, direction, r->time};
+    srec->attenuation = (color){1.0, 1.0, 1.0};
+    srec->is_specular = 1;
+    srec->pdf_ptr = NULL;
     return 1;
 }
 
@@ -180,25 +169,25 @@ int material_light_scatter(){
 
 
 ///Scatter a ray that hits a isotropic material
-int material_isotropic_scatter(material_isotropic* mat, ray*r, hit_record* rec, color* attenuation, ray* scattered){
-    *scattered = (ray){rec->p, vec3_random_in_unit_sphere(), r->time};
-    *attenuation = texture_value(mat->albedo, rec->u, rec->v, &rec->p);
+int material_isotropic_scatter(material_isotropic* mat, ray*r, hit_record* rec, scatter_record* srec){
+    //*scattered = (ray){rec->p, vec3_random_in_unit_sphere(), r->time};
+    //*attenuation = texture_value(mat->albedo, rec->u, rec->v, &rec->p);
     return 1;
 }
 
 
 ///Generic scatter material
-int material_scatter(material* mat, ray* r, hit_record* rec, color* albedo, ray* scattered, double* pdf){
+int material_scatter(material* mat, ray* r, hit_record* rec, scatter_record* srec){
     if(mat->type == MATERIAL_LAMBERTIAN){
-        return material_lambertian_scatter((material_lambertian*)mat->mat, r, rec, albedo, scattered, pdf);
+        return material_lambertian_scatter((material_lambertian*)mat->mat, r, rec, srec);
     }else if(mat->type == MATERIAL_DIELECTRIC){
-        return material_dielectric_scatter((material_dielectric*)mat->mat, r, rec, albedo, scattered);
+        return material_dielectric_scatter((material_dielectric*)mat->mat, r, rec, srec);
     }else if(mat->type == MATERIAL_METAL){
-        return material_metal_scatter((material_metal*)mat->mat, r, rec, albedo, scattered);
+        return material_metal_scatter((material_metal*)mat->mat, r, rec, srec);
     }else if(mat->type == MATERIAL_LIGHT){
         return material_light_scatter();
     }else if(mat->type == MATERIAL_ISOTROPIC){
-        return material_isotropic_scatter((material_isotropic*)mat->mat, r, rec, albedo, scattered);
+        return material_isotropic_scatter((material_isotropic*)mat->mat, r, rec, srec);
     }else{printf("material_scatter nor implemented for material type %d\n", mat->type); return 0;}
 }
 
@@ -212,18 +201,23 @@ int material_scatter(material* mat, ray* r, hit_record* rec, color* albedo, ray*
  * PDF scattering
  */
 
+///Lambertian scattering ray
 double material_lambertian_scattering_pdf(material_lambertian* mat, ray* r, hit_record* rec, ray* scattered){
     double cosine = vec3c_dot(rec->normal, vec3_unit(&scattered->dir));
     return cosine < 0 ? 0 : cosine / PI;
 }
 
 
-
+///Calculate the scattering ray of a material after a hit
 double material_scattering_pdf(material* mat, ray* r, hit_record* rec, ray* scattered){
     if(mat->type == MATERIAL_LAMBERTIAN){
         return material_lambertian_scattering_pdf((material_lambertian*)mat->mat, r, rec, scattered);
     }else{printf("material_scattering_pdf nor implemented for material type %d\n", mat->type); return 0;}
 }
+
+
+
+
 
 
 

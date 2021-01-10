@@ -34,9 +34,6 @@ typedef struct hit_record{
 
 
 
-
-
-
 /**
  * Hittables
  * */
@@ -103,13 +100,10 @@ typedef struct {hittable* boundary; struct material* phase_function; double neg_
 ///Hittable object Wrapper to apply translation
 typedef struct {hittable* obj; vec3 offset;}translate;
 ///Hittable object Wrapper to apply rotation
-//TODO implement all other rotation in a single object
 typedef enum {X, Y, Z} rotation_axis;
 typedef struct {hittable* obj; double sin_theta; double cos_theta; int hasbox; aabb bbox; rotation_axis axis;}rotate;
 ///Hittable object Wrapper to flip normals
 typedef struct {hittable* obj;}flip_face;
-
-
 
 
 

@@ -19,6 +19,9 @@
 //STB Image write to output png
 #include "extern_stb_image_write.h"
 
+
+
+
 /**
  *
  * Main
@@ -34,15 +37,19 @@ void color_printHex(char* s, color* c){
 void write_color(unsigned char* pixels, color* pixel_color, int samples_per_pixel, int index){
     double r = pixel_color->x; double g = pixel_color->y; double b = pixel_color->z;
     double scale = 1.0 / (double)samples_per_pixel;
-    r = sqrt(scale * r); g = sqrt(scale * g); b = sqrt(scale * b);
+
+    r = sqrt(scale * r);
+    g = sqrt(scale * g);
+    b = sqrt(scale * b);
+
+
     pixels[index] = (unsigned char)(256*clamp(r, 0.0, 0.999));;
     pixels[index+1] = (unsigned char)(256*clamp(g, 0.0, 0.999));;
     pixels[index+2] = (unsigned char)(256*clamp(b, 0.0, 0.999));;
 }
 
-
 ///Cast a ray into the world and retrieve the color of that ray
-color ray_color(ray* r, color* background, hittable_list* world, hittable* lights, int recursion_depth){
+color ray_color(ray* r, color* background, hittable_list* world, hittable_list* lights, int recursion_depth){
     //Base case of recursion
     if (recursion_depth <= 0){return (color){0,0,0};}
 
@@ -51,25 +58,28 @@ color ray_color(ray* r, color* background, hittable_list* world, hittable* light
     if (hittable_list_hit(world, r, 0.001, HUGE_VAL, &rec) == 0){return *background;}
 
     //If the thing I hit is emitting something, take the emitted color
+    scatter_record srec;
     color emitted = material_emitted(rec.mat, &rec, rec.u, rec.v, rec.p);
-    ray scattered;
-    double pdf_val;
-    color albedo;
+
     //If the hit wasn't scattered take the emitted color (could be also just a black if it wasn't emitting anything)
-    if (material_scatter(rec.mat, r, &rec, &albedo, &scattered, &pdf_val) == 0){return emitted;}
+    if (material_scatter(rec.mat, r, &rec, &srec) == 0){return emitted;}
+    if (srec.is_specular){return vec3c_mul(srec.attenuation, ray_color(&srec.specular_ray, background, world, lights, recursion_depth-1));}
 
+    //Get the lights PDF to generate the scattered ray
+    pdf light_pdf; pdf_hittable_list light_instance;
+    pdf_hittable_list_init_stack(&light_pdf, &light_instance, lights, rec.p);
 
+    //Mix the perfect light PDF with a random cosine one
+    pdf mixture_pdf; pdf_mixture mixture_instance;
+    pdf_mixture_init_stack(&mixture_pdf, &mixture_instance, &light_pdf, srec.pdf_ptr, 0.1);
 
-    pdf* p = pdf_hittable_init(lights, rec.p);
-    scattered = (ray){rec.p, pdf_generate(p), r->time};
-    pdf_val = pdf_value(p, &scattered.dir);
-    pdf_free(p);
-
-
-
+    //Generate the scattered ray
+    ray scattered = {rec.p, pdf_generate(&mixture_pdf), r->time};
+    double pdf_val = pdf_value(&mixture_pdf, &scattered.dir);
+    if(srec.pdf_ptr != 0){pdf_free(srec.pdf_ptr);}
 
     //else Recursively take the color of the scattered ray and multiply its color by the attenuation color
-    color scattered_pdf_color = vec3_mul_k(&albedo,  material_scattering_pdf(rec.mat, r, &rec, &scattered));
+    color scattered_pdf_color = vec3_mul_k(&srec.attenuation,  material_scattering_pdf(rec.mat, r, &rec, &scattered));
     color scattered_ray_color = ray_color(&scattered, background, world, lights, recursion_depth-1);
     color scattered_ray_color_weighted_by_pdf = vec3_div_k(&scattered_ray_color, pdf_val);
     return vec3c_sum(emitted, vec3_mul(&scattered_pdf_color, &scattered_ray_color_weighted_by_pdf));
@@ -81,232 +91,42 @@ color ray_color(ray* r, color* background, hittable_list* world, hittable* light
 
 /**
  *
- * Scenes
+ * Scene
  *
  * */
 
-///3 big balls and many smaller ones
-hittable_list* setup_scene(){
-    hittable_list* world = hittable_list_new(1024);
-
-    //Checker texture
-    texture* ground_texture1 = texture_solid_color_init_rgb(0.5, 0.5, 0.5);
-    texture* ground_texture2 = texture_solid_color_init_rgb(0.2, 0.2, 0.2);
-    texture* ground_texture = texture_checker_init(ground_texture1, ground_texture2);
-    texture* ball_texture = texture_solid_color_init_rgb(0.4, 0.2, 0.1);
-
-    //Add the ground object
-    material* material_ground = material_lambertian_new(ground_texture);
-    hittable* g = hittable_sphere_new(world,  (point3){0, -1000, 0}, 1000,  material_ground);
-
-    //Add small random spheres
-    for (int a=-11; a<11; a++){
-        for (int b=-11; b<11; b++){
-            double choose_mat = random_double();
-            point3 center = {a + 0.9*random_double(), 0.2, b + 0.9*random_double()};
-            vec3 p = {4, 0.2, 0};
-            if ( vec3c_length(vec3_sub(&center, &p)) > 0.9){
-                material* sphere_mat;
-                if(choose_mat < 0.8){
-                    //diffuse
-                    color albedo = vec3c_mul(vec3_random() , vec3_random());
-                    sphere_mat = material_lambertian_new_from_color(albedo);
-
-                    point3 center2 = vec3c_sum(center, (vec3){0, random_double_scaled(0, 0.5), 0});
-                    hittable_moving_sphere_new(world, center, center2, 0.0, 1.0, 0.2, sphere_mat);
-
-                }else if(choose_mat < 0.95){
-                    //metal
-                    color albedo = vec3_random_scaled(0.5, 1);
-                    double fuzz = random_double_scaled(0, 0.5);
-                    sphere_mat = material_metal_new(albedo, fuzz);
-                    hittable_sphere_new(world, center, 0.2, sphere_mat);
-                }else{
-                    //glass
-                    sphere_mat = material_dielectric_new(1.5);
-                    hittable_sphere_new(world, center, 0.2, sphere_mat);
-                }
-            }
-        }
-    }
-
-    //Add 3 big shperes with different materials and return
-    material* material1 = material_dielectric_new(1.5);
-    hittable* h1 = hittable_sphere_new(world, (point3){0, 1, 0}, 1.0, material1);
-    material* material2 = material_lambertian_new(ball_texture);
-    hittable* h2 = hittable_sphere_new(world, (point3){-4, 1, 0}, 1.0, material2);
-    material* material3 = material_metal_new((color){0.7, 0.6, 0.5}, 0.0);
-    hittable* h3 = hittable_sphere_new(world,  (point3){4, 1, 0}, 1.0, material3);
-    return world;
-}
-
-
-///Two big spheres with checker textures
-hittable_list* two_spheres(){
-    hittable_list* world = hittable_list_new(1024);
-    texture* texture1 = texture_solid_color_init_rgb(0.5, 0.5, 0.5);
-    texture* texture2 = texture_solid_color_init_rgb(0.2, 0.2, 0.2);
-    texture* tex = texture_checker_init(texture1, texture2);
-    material* mat1 = material_lambertian_new(tex);
-    hittable* s1 = hittable_sphere_new(world, (point3){0, -10, 0}, 10, mat1);
-    hittable* s2 = hittable_sphere_new(world, (point3){0,  10, 0}, 10, mat1);
-    return world;
-}
-
-
-///One sphere and ground with perlin noise
-hittable_list* two_perlin_spheres(){
-    hittable_list* world = hittable_list_new(1024);
-    texture* pertext = texture_noise_init_scaled(4);
-    material* mat1 = material_lambertian_new(pertext);
-    material* mat2 = material_lambertian_new(pertext);
-    hittable* s1 = hittable_sphere_new(world, (point3){0, -1000, 0}, 1000, mat1);
-    hittable* s2 = hittable_sphere_new(world, (point3){0,  2, 0}, 2, mat1);
-    return world;
-}
-
-
-///Earth sphere image
-hittable_list* earth(){
-    hittable_list* world = hittable_list_new(1024);
-    texture* earthtexture = texture_image_init("images/earthmap.jpg");
-    material* earthsurface = material_lambertian_new(earthtexture);
-    hittable* globe = hittable_sphere_new(world, (point3){0, 0, 0}, 2, earthsurface);
-    return world;
-}
-
-
-///Perlin ball with simple light
-hittable_list* simple_light(){
-    hittable_list* world = hittable_list_new(1024);
-    texture* pertext = texture_noise_init_scaled(4);
-    material* mat1 = material_lambertian_new(pertext);
-    hittable* s1 = hittable_sphere_new(world, (point3){0, -1000, 0}, 1000, mat1);
-    hittable* s2 = hittable_sphere_new(world, (point3){0,  2, 0}, 2, mat1);
-    material* difflight = material_light_new_from_color((color){4,4,4});
-    hittable* l1 = hittable_rect_new(world, 3, 5, 1, 3, 0,0, -2,  XY, difflight);
-    return world;
-}
-
-
 ///Cornel box
-hittable_list* cornell_box(){
+hittable_list* setupScene(hittable_list* lights_output){
     hittable_list* world = hittable_list_new(1024);
 
     material* red = material_lambertian_new_from_color((color){0.65, 0.05, 0.05});
     material* whi = material_lambertian_new_from_color((color){0.73, 0.73, 0.73});
     material* gre = material_lambertian_new_from_color((color){0.12, 0.45, 0.15});
+    material* lig = material_light_new_from_color((color){15,15,15});
 
+    //Box and light
     hittable* b1 = hittable_rect_new(world, 0,0, 0, 555, 0, 555, 555, YZ, gre);
     hittable* b2 = hittable_rect_new(world, 0,0, 0, 555, 0, 555, 0, YZ, red);
-
-    material* lig = material_light_new_from_color((color){15,15,15});
     hittable* b3 = hittable_rect_new(NULL, 213, 343, 0,0, 227, 332, 554, XZ, lig);
     b3 = hittable_flip_face_init(world, b3);
-
+    hittable_list_add(lights_output, b3);
     hittable* b4 = hittable_rect_new(world, 0, 555, 0,0, 0, 555, 0, XZ, whi);
     hittable* b5 = hittable_rect_new(world, 0, 555, 0,0, 0, 555, 555, XZ, whi);
     hittable* b6 = hittable_rect_new(world, 0, 555, 0, 555, 0,0, 555, XY, whi);
 
-    hittable* box1 = hittable_box_new(NULL, (point3){0,0,0}, (point3){165,330,165}, whi);
+
+    material* aluminium = material_metal_new((color){0.8, 0.85, 0.88}, 0.0);
+    hittable* box1 = hittable_box_new(NULL, (point3){0,0,0}, (point3){165,330,165}, aluminium);
     box1 = hittable_rotate_init(NULL, box1, 15, Y);
     box1 = hittable_translate_init(world, box1, (vec3){265, 0, 295});
 
-    hittable* box2 = hittable_box_new(NULL, (point3){0,0,0}, (point3){165,165,165}, whi);
-    box2 = hittable_rotate_init(NULL, box2, -18, Y);
-    box2 = hittable_translate_init(world, box2, (vec3){130, 0, 65});
+
+    material* glass = material_dielectric_new(1.5);
+    hittable* s2 = hittable_sphere_new(world, (point3){190, 90, 190}, 90, glass);
+    hittable_list_add(lights_output, s2);
+
     return world;
 }
-
-
-///Cornell box with smoke boxes
-hittable_list* cornell_smoke(){
-    hittable_list* world = hittable_list_new(1024);
-    material* red = material_lambertian_new_from_color((color){0.65, 0.05, 0.05});
-    material* whi = material_lambertian_new_from_color((color){0.73, 0.73, 0.73});
-    material* gre = material_lambertian_new_from_color((color){0.12, 0.45, 0.15});
-    material* lig = material_light_new_from_color((color){15,15,15});
-    hittable* b1 = hittable_rect_new(world, 0,0, 0, 555, 0, 555, 555, YZ, gre);
-    hittable* b2 = hittable_rect_new(world, 0,0, 0, 555, 0, 555, 0, YZ, red);
-    hittable* b3 = hittable_rect_new(world, 213, 343, 0,0, 227, 332, 554, XZ, lig);
-    hittable* b4 = hittable_rect_new(world, 0, 555, 0,0, 0, 555, 0, XZ, whi);
-    hittable* b5 = hittable_rect_new(world, 0, 555, 0,0, 0, 555, 555, XZ, whi);
-    hittable* b6 = hittable_rect_new(world, 0, 555, 0, 555, 0,0, 555, XY, whi);
-    hittable* box1 = hittable_box_new(NULL, (point3){0,0,0}, (point3){165,330,165}, whi);
-    box1 = hittable_rotate_init(NULL, box1, 15, Y);
-    box1 = hittable_translate_init(NULL, box1, (vec3){265, 0, 295});
-    box1 = hittable_constant_medium_init_c(world, box1, 0.01, (color){0,0,0});
-    hittable* box2 = hittable_box_new(NULL, (point3){0,0,0}, (point3){165,165,165}, whi);
-    box2 = hittable_rotate_init(NULL, box2, -18, Y);
-    box2 = hittable_translate_init(NULL, box2, (vec3){130, 0, 65});
-    box2 = hittable_constant_medium_init_c(world, box2, 0.01, (color){1,1,1});
-    return world;
-}
-
-
-///Final scene with almost everything
-hittable_list* final_scene(){
-    //Setup ground with boxes
-    hittable_list* boxes1 = hittable_list_new_no_gc(1024);
-    material* ground = material_lambertian_new_from_color((color){0.48,0.83,0.53});
-    const int boxes_per_side = 20;
-    for (int i = 0; i < boxes_per_side; i++) {
-        for (int j = 0; j < boxes_per_side; j++) {
-            double w = 100.0;
-            double x0 = -1000.0 + i*w;
-            double z0 = -1000.0 + j*w;
-            double y0 = 0.0;
-            double x1 = x0 + w;
-            double y1 = random_double_scaled(1,101);
-            double z1 = z0 + w;
-            hittable_box_new(boxes1, (point3){x0,y0,z0}, (point3){x1,y1,z1}, ground);
-        }
-    }
-
-    //Wrap boxes into bvh tree
-    hittable_list* objects = hittable_list_new(1024);
-    hittable* node = bvh_node_init(objects, boxes1, 0, 1);
-
-    //Setup light
-    material* light = material_light_new_from_color((color){7,7,7});
-    hittable_rect_new(objects, 123, 423, 0,0, 147, 412, 554, XZ, light);
-
-    //Moving sphere
-    point3 center1 = (point3){400, 400, 200};
-    point3 center2 = vec3c_sum(center1, (vec3){30,0,0});
-    material* moving_sphere_material = material_lambertian_new_from_color((color){0.7,0.3,0.1});
-    hittable_moving_sphere_new(objects, center1, center2, 0, 1, 50, moving_sphere_material);
-
-    //Glass ball
-    hittable_sphere_new(objects, (point3){260,150,45}, 50, material_dielectric_new(1.5));
-
-    //Metal ball
-    hittable_sphere_new(objects, (point3){0,150,145}, 50, material_metal_new((color){0.8,0.8,0.8}, 1.0));
-
-    //Gas ball
-    hittable* boundary = hittable_sphere_new(NULL, (point3){360,150,145}, 70, material_dielectric_new(1.5));
-    hittable_constant_medium_init_c(objects, boundary, 0.025, (color){0.2,0.4,0.9});
-
-    //Huge light smoke area
-    boundary = hittable_sphere_new(NULL, (point3){0,0,0}, 5000, material_dielectric_new(1.5));
-    hittable_constant_medium_init_c(objects, boundary, 0.0001, (color){1,1,1});
-
-    //Perline noise
-    texture* pertext = texture_noise_init_scaled(5);
-    hittable_sphere_new(objects, (point3){220,280,300}, 80, material_lambertian_new(pertext));
-
-    //1000 small spheres grouped, translated, and rotated
-    hittable_list* boxes2 = hittable_list_new_no_gc(1024);
-    material* white = material_lambertian_new_from_color((color){0.73, 0.73, 0.73});
-    int ns = 1000;
-    for (int j = 0; j < ns; j++) {hittable_sphere_new(boxes2, vec3_random_scaled(0,165), 10, white);}
-    hittable* bvh = bvh_node_init(NULL, boxes2, 0, 1);
-    hittable* rotated = hittable_rotate_init(NULL, bvh, 15, Y);
-    hittable* translated = hittable_translate_init(objects, rotated, (vec3){-100, 270, 395});
-    return objects;
-}
-
-
 
 
 
@@ -314,114 +134,42 @@ hittable_list* final_scene(){
 
 ///Main
 int main(int argc, char** argv) {
-    /**
-     *
-     * Setup
-     *
-     **/
-    //Output file
-    printf("Argc: %d\n", argc);
-    char* outputFilePath = argv[1];
+    //Read parameters
+    char* outputFilePath = "";
+    double ASPECT_RATIO = 1.0;
+    int IMAGE_WIDTH = 1024;
+    int IMAGE_HEIGHT = (int)(IMAGE_WIDTH / ASPECT_RATIO);
+    int samples_per_pixel = 256; //how many ray per pixel
+    int max_recursion_depth = 10; //how deep the ray scattering goes
+    for (int i = 1; i < argc ; i++) {
+        if (argv[i][0] == '-'){
+            switch (argv[i][1]) {
+            case 'w': IMAGE_WIDTH  = atoi(argv[i+1]); break;
+            case 'h': IMAGE_HEIGHT = atoi(argv[i+1]); break;
+            case 'o': outputFilePath = argv[i+1]; break;
+            case 's': samples_per_pixel = atoi(argv[i+1]); break;
+            default:
+                fprintf(stderr, "Usage: %s [-w width] [-h height] [-o outputFile] [-s sample_per_pixel]\n", argv[0]);
+                exit(EXIT_FAILURE);
+            }
+        }
+    }
 
     //Define camera
-    double ASPECT_RATIO = 16.0/9.0;
     double vfov = 40;
-    point3 lookfrom;
-    point3 lookat;
     vec3 vup = (vec3){0, 1, 0};
     double dist_to_focus = 10;
     double aperture = 0.0;
-    color background = {0,0,0};
+    point3 lookfrom = (point3){278, 278, -800};
+    point3 lookat   = (point3){278, 278, 0};
 
     //Define objects list
-    hittable_list* world;
-    switch(6){
-        case 1:
-            world = setup_scene();
-            background = (color){0.70, 0.80, 1.00};
-            lookfrom = (point3){13, 2,  3};
-            lookat   = (point3){ 0, 0,  0};
-            aperture = 0.1;
-            break;
-
-        case 2:
-            world = two_spheres();
-            background = (color){0.70, 0.80, 1.00};
-            lookfrom = (point3){13, 2,  3};
-            lookat   = (point3){ 0, 0,  0};
-            vfov = 20.0;
-            break;
-
-        case 3:
-            world = two_perlin_spheres();
-            background = (color){0.70, 0.80, 1.00};
-            lookfrom = (point3){13, 2,  3};
-            lookat   = (point3){ 0, 0,  0};
-            vfov = 20.0;
-            break;
-
-        case 4:
-            world = earth();
-            background = (color){0.70, 0.80, 1.00};
-            lookfrom = (point3){13, 2,  3};
-            lookat   = (point3){ 0, 0,  0};
-            vfov = 20.0;
-            break;
-
-        case 5:
-            world = simple_light();
-            background = (color){0.0, 0.0, 0.0};
-            lookfrom = (point3){26, 3, 6};
-            lookat   = (point3){ 0, 2, 0};
-            vfov = 20.0;
-            break;
-
-        case 6:
-            world = cornell_box();
-            ASPECT_RATIO = 1.0;
-            background = (color){0.0, 0.0, 0.0};
-            lookfrom = (point3){278, 278, -800};
-            lookat   = (point3){278, 278, 0};
-            vfov = 40.0;
-            break;
-
-        case 7:
-            world = cornell_smoke();
-            ASPECT_RATIO = 1.0;
-            lookfrom = (point3){278, 278, -800};
-            lookat   = (point3){278, 278, 0};
-            vfov = 40.0;
-            break;
-
-        default:
-        case 8:
-            world = final_scene();
-            ASPECT_RATIO = 1.0;
-            background = (color){0.0, 0.0, 0.0};
-            lookfrom = (point3){478, 278, -600};
-            lookat   = (point3){278, 278, 0};
-            vfov = 40.0;
-            break;
-    }
+    hittable_list* lights = hittable_list_new_no_gc(64);
+    hittable_list* world = setupScene(lights);
+    color background = {0,0,0};
 
     //Init camera
-    const int IMAGE_WIDTH = 1024;
-    const int IMAGE_HEIGHT = (int)(IMAGE_WIDTH / ASPECT_RATIO);
-    const int samples_per_pixel = 10; //how many ray per pixel
-    const int max_recursion_depth = 20; //how deep the ray scattering goes
     camera* c = camera_new(lookfrom, lookat, vup, vfov, ASPECT_RATIO, aperture, dist_to_focus, 0.0, 1.0);
-
-
-
-
-    material* THIS_CAN_BE_NULL_FIX_TODO = material_lambertian_new_from_color((color){0.73, 0.73, 0.73});
-    hittable* lights = hittable_rect_new(NULL, 213, 343, 0,0, 227, 332, 554, XZ, THIS_CAN_BE_NULL_FIX_TODO);
-
-    /**
-     *
-     * Rendering
-     *
-     **/
 
     //PNG output setup
     const int CHANNELS = 3;

@@ -14,6 +14,7 @@ LINUX_EXTRA_LIBS= -L/usr/lib/x86_64-linux-gnu -lm
 OPENMP=-fopenmp
 
 
+
 build/raytraCer: clean $(OBJECTS)
 	$(CC) $(OBJECTS) $(FLAGS) $(OPENMP) -o $@
 
@@ -31,10 +32,14 @@ clean:
 run: build/raytraCer
 	./build/raytraCer
 
+test_highres: build/raytraCer
+	./build/raytraCer -w 1024 -h 1024 -s 512 -o output_highres.png
 
-test: build/raytraCer
-	./build/raytraCer output.png
+test_midres: build/raytraCer
+	./build/raytraCer -w 512 -h 512 -s 256 -o output_midres.png
 
+test_lowres: build/raytraCer
+	./build/raytraCer -w 256 -h 256 -s 128 -o output_lowres.png
 
 
 
@@ -48,4 +53,4 @@ docker-run-memory-test:
 	docker run -ti -v ~/Documents/raytraCer:/raytracer $(CONTAINER) bash -c "cd raytracer; make valgrind;"
 
 valgrind: build/raytraCer_linux
-	valgrind --leak-check=yes ./build/raytraCer_linux output.ppm
+	valgrind --leak-check=yes ./build/raytraCer_linux -o output.ppm

@@ -33,7 +33,7 @@ void hit_record_print(hit_record* h){
  *
  * */
 
-
+///Rotate a point in space, useful on hittable_rotate
 void rotatePoint(vec3 original, double sin_theta, double cos_theta, rotation_axis axis, vec3* output){
     if (axis == X){
         output->x =  cos_theta * original.x  -  sin_theta * original.y;
@@ -67,8 +67,6 @@ inline static int box_compare(hittable* a, hittable* b, int axis){
 int box_x_compare(const void* a, const void* b){return box_compare(*((hittable**)a), *((hittable**)b), 0);}
 int box_y_compare(const void* a, const void* b){return box_compare(*((hittable**)a), *((hittable**)b), 1);}
 int box_z_compare(const void* a, const void* b){return box_compare(*((hittable**)a), *((hittable**)b), 2);}
-
-
 
 
 
@@ -751,32 +749,56 @@ int hittable_bounding_box(hittable* o, double t0, double t1, aabb* output_box){
 
 
 
+/**
+ *
+ * Hittable Objects Probability density functions (PDFs)
+ *
+ * */
 
 
+///PDF of a spehere
+double hittable_sphere_pdf_value(sphere* s, point3 orig, vec3 v){
+    hit_record rec;
+    ray r = {orig, v, 0};
+    if(!sphere_hit(s, &r, 0.001, HUGE_VAL, &rec)){return 0;}
 
+    double cos_theta_max = sqrt(1 - s->r * s->r / vec3c_length_squared(vec3_sub(&s->center, &orig)));
+    double solid_angle = 2 * PI * (1-cos_theta_max);
+    return 1/solid_angle;
+}
+
+
+///PDF of a rect
 double hittable_rect_pdf_value(rect* rect, point3 orig, vec3 v){
+    hit_record rec;
+    ray r = {orig, v, 0};
+    if(!rect_hit(rect, &r, 0.0001, HUGE_VAL, &rec)){return 0;}
+    double distance_squared = rec.t * rec.t * vec3_length_squared(&v);
 
+    double area = 0;
     if(rect->axis == XZ){
-        hit_record rec;
-        ray r = {orig, v, 0};
-        if(!rect_hit(rect, &r, 0.0001, HUGE_VAL, &rec)){return 0;}
-
-        double area = (rect->x1-rect->x0)*(rect->z1-rect->z0);
-        double distance_squared = rec.t * rec.t * vec3_length_squared(&v);
-        double cosine = fabs(vec3_dot(&v, &rec.normal) / vec3_length(&v));
-
-        return distance_squared / (cosine * area);
-    }else{
-        //TODO
-        return 0.0;
+        area = (rect->x1-rect->x0)*(rect->z1-rect->z0);
+    }else if(rect->axis == XY){
+        area = (rect->x1-rect->x0)*(rect->y1-rect->y0);
+    }else if(rect->axis == YZ){
+        area = (rect->y1-rect->y0)*(rect->z1-rect->z0);
     }
+    double cosine = fabs(vec3_dot(&v, &rec.normal) / vec3_length(&v));
+    return distance_squared / (cosine * area);
 }
 
 
-
+///Generic PDF value function call
 double hittable_pdf_value(hittable* o, point3 orig, vec3 v){
-    if (o->t == HITTABLE_RECT){
+    if (o->t == HITTABLE_SPHERE){
+        return hittable_sphere_pdf_value((sphere*)o->obj, orig, v);
+    }else if (o->t == HITTABLE_RECT){
         return hittable_rect_pdf_value((rect*)o->obj, orig, v);
+
+    ///Wrappers
+    }else if (o->t == HITTABLE_FLIP_FACE){
+        return hittable_pdf_value(((flip_face*)o->obj)->obj, orig, v);
+
     }else{
         return 0.0;
     }
@@ -786,14 +808,56 @@ double hittable_pdf_value(hittable* o, point3 orig, vec3 v){
 
 
 
+
+
+
+/**
+ *
+ * Hittable Objects Random point
+ *
+ * */
+
+///Random point on a spehere
+vec3 hittable_sphere_random(sphere* s, point3 orig){
+    vec3 direction = vec3_sub(&s->center, &orig);
+    double distance_squared = vec3_length_squared(&direction);
+    onb uvw;
+    onb_init_from_w(&uvw, &direction);
+
+    //Random point on a sphere
+    double r1 = random_double();
+    double r2 = random_double();
+    double z = 1 + r2 * (sqrt(1-s->r*s->r/distance_squared) - 1);
+    double phi = 2 * PI * r1;
+    double x = cos(phi)*sqrt(1-z*z);
+    double y = sin(phi)*sqrt(1-z*z);
+    return onb_localv(&uvw, (vec3){x, y, z});
+}
+
+///Random point on a rect
 vec3 hittable_rect_random(rect* rect, point3 orig){
-    point3 random_point = {random_double_scaled(rect->x0, rect->x1), rect->k, random_double_scaled(rect->z0, rect->z1)};
+    point3 random_point;
+    if(rect->axis == XZ){
+        random_point = (point3){random_double_scaled(rect->x0, rect->x1), rect->k, random_double_scaled(rect->z0, rect->z1)};
+    }else if(rect->axis == XY){
+        random_point = (point3){random_double_scaled(rect->x0, rect->x1), random_double_scaled(rect->y0, rect->y1), rect->k};
+    }else if(rect->axis == YZ){
+        random_point = (point3){rect->k, random_double_scaled(rect->y0, rect->y1), random_double_scaled(rect->z0, rect->z1)};
+    }
     return vec3c_sub(random_point, orig);
 }
 
+///Generic random point on an object
 vec3 hittable_random(hittable* o, point3 orig){
-    if (o->t == HITTABLE_RECT){
+    if (o->t == HITTABLE_SPHERE){
+        return hittable_sphere_random((sphere*)o->obj, orig);
+    }else if (o->t == HITTABLE_RECT){
         return hittable_rect_random((rect*)o->obj, orig);
+
+    ///Wrappers
+    }else if (o->t == HITTABLE_FLIP_FACE){
+        return hittable_random(((flip_face*)o->obj)->obj, orig);
+
     }else{
         return (vec3){1,0,0};
     }

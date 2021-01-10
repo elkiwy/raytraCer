@@ -4,105 +4,34 @@
 #include "vec3.h"
 #include "onb.h"
 #include "hittable.h"
+#include "hittable_list.h"
 
 
-typedef enum {PDF_COSINE, PDF_HITTABLE} pdf_type;
-typedef struct pdf{
-    pdf_type type;
-    void* obj;
-}pdf;
+//Generic struct
+typedef enum {PDF_COSINE, PDF_HITTABLE, PDF_HITTABLE_LIST, PDF_MIXTURE} pdf_type;
+typedef struct pdf{pdf_type type; void* obj;}pdf;
 
-
-
+//Instances
 typedef struct{onb uvw;}pdf_cosine;
 typedef struct{point3 orig;hittable* obj;}pdf_hittable;
+typedef struct{point3 orig;hittable_list* obj;}pdf_hittable_list;
+typedef struct{pdf* a;pdf* b;double ratio;}pdf_mixture;
 
 
+//Inits
+pdf* pdf_generic_init(pdf_type t, void* o);
+pdf* pdf_cosine_init(vec3* w);
+pdf* pdf_hittable_init(hittable* obj, point3 origin);
+pdf* pdf_hittable_list_init(hittable_list* obj, point3 origin);
+void pdf_hittable_list_init_stack(pdf* wrapper, pdf_hittable_list* instance, hittable_list* obj, point3 origin);
+pdf* pdf_mixture_init(pdf* a, pdf* b, double ratio);
+void pdf_mixture_init_stack(pdf* wrapper, pdf_mixture* instance, pdf* a, pdf* b, double ratio);
 
+//Free
+void pdf_free(pdf* p);
 
-pdf* pdf_generic_init(pdf_type t, void* o){
-    pdf* p = malloc(sizeof(pdf));
-    p->type = t;
-    p->obj = o;
-    return p;
-}
-
-
-pdf* pdf_cosine_init(vec3* w){
-    pdf_cosine* c = malloc(sizeof(pdf_cosine));
-    onb_init_from_w(&c->uvw, w);
-    return pdf_generic_init(PDF_COSINE, c);
-}
-
-pdf* pdf_hittable_init(hittable* obj, point3 origin){
-    pdf_hittable* h = malloc(sizeof(pdf_hittable));
-    h->obj = obj;
-    h->orig = origin;
-    return pdf_generic_init(PDF_HITTABLE, h);
-}
-
-
-
-
-
-
-void pdf_free(pdf* p){
-    free(p->obj);
-    free(p);
-}
-
-
-
-
-
-
-
-
-double pdf_cosine_value(pdf_cosine* p, vec3* dir){
-    double cosine = vec3c_dot(vec3_unit(dir), p->uvw.axis[2]);
-    return (cosine <= 0) ? 0 : cosine / PI;
-}
-
-
-double pdf_hittable_value(pdf_hittable* p, vec3* dir){
-    return hittable_pdf_value(p->obj, p->orig, *dir);
-}
-
-double pdf_value(pdf* p, vec3* direction){
-    if(p->type == PDF_COSINE){
-        return pdf_cosine_value((pdf_cosine*)p->obj, direction);
-    }else if(p->type == PDF_HITTABLE){
-        return pdf_hittable_value((pdf_hittable*)p->obj, direction);
-    }else{
-        printf("Not implemented pdf_value");
-    }
-}
-
-
-
-
-
-
-
-vec3 pdf_cosine_generate(pdf_cosine* p){
-    return onb_localv(&p->uvw, random_cosine_direction());
-}
-
-vec3 pdf_hittable_generate(pdf_hittable* p){
-    return hittable_random(p->obj, p->orig);
-}
-
-vec3 pdf_generate(pdf* p){
-    if(p->type == PDF_COSINE){
-        return pdf_cosine_generate((pdf_cosine*)p->obj);
-    }else if(p->type == PDF_HITTABLE){
-        return pdf_hittable_generate((pdf_hittable*)p->obj);
-    }else{
-        printf("Not implemented pdf_generate");
-
-    }
-}
-
-
+//Freatures
+double pdf_value(pdf* p, vec3* direction);
+vec3 pdf_generate(pdf* p);
 
 #endif // __PDF_H_

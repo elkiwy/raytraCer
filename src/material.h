@@ -12,7 +12,15 @@
 
 //Forward declaration of hit record
 struct hit_record;
+struct pdf;
 
+///Holder structure for data abour scattering rays
+typedef struct scatter_record{
+    ray specular_ray;
+    int is_specular;
+    color attenuation;
+    struct pdf* pdf_ptr;
+}scatter_record;
 
 
 //Generic material struct
@@ -44,8 +52,8 @@ static int materials_index = 0;
 void materials_free_all();
 
 //Features
-int material_scatter(material* mat, ray* r, struct hit_record* rec, color* albedo, ray* scattered, double* pdf);
-double material_scattering_pdf(material* mat, ray* r, struct hit_record* rec, ray* scattered);
 color material_emitted(material* mat, struct hit_record* rec, double u, double v, point3 p);
+int material_scatter(material* mat, ray* r, struct hit_record* rec, scatter_record* srec);
+double material_scattering_pdf(material* mat, ray* r, struct hit_record* rec, ray* scattered);
 
 #endif // __MATERIAL_H_

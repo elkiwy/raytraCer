@@ -3,6 +3,7 @@
 
 
 
+///Initialize a new orthogonal base from a vector w
 void onb_init_from_w(onb* o, vec3* n){
     o->axis[2] = vec3_unit(n);
     vec3 a = (fabs(o->axis[2].x) > 0.9) ? (vec3){0,1,0} : (vec3){1,0,0};
@@ -11,7 +12,7 @@ void onb_init_from_w(onb* o, vec3* n){
 }
 
 
-
+///Get the relative coordinates of a vector in this ONB space
 vec3 onb_local(onb* o, double a, double b, double c){
     vec3 va = vec3_mul_k(&o->axis[0], a);
     vec3 vb = vec3_mul_k(&o->axis[1], b);
@@ -20,6 +21,7 @@ vec3 onb_local(onb* o, double a, double b, double c){
 }
 
 
+///Get the relative coordinates of a vector in this ONB space
 vec3 onb_localv(onb* o, vec3 a){
     vec3 va = vec3_mul_k(&o->axis[0], a.x);
     vec3 vb = vec3_mul_k(&o->axis[1], a.y);

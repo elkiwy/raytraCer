@@ -19,10 +19,8 @@ void aabb_free(aabb* b){
 ///Pretty print an AABB
 void aabb_print(aabb* b){
     printf("Bounding box:\n");
-    printf("  Min:");
-    vec3_print(&b->minimum);
-    printf("  Max:");
-    vec3_print(&b->maximum);
+    printf("  Min:"); vec3_print(&b->minimum);
+    printf("  Max:"); vec3_print(&b->maximum);
     fflush(stdout);
 }
 

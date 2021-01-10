@@ -38,8 +38,17 @@ void hittable_lists_free_all();
 int hittable_list_index(hittable_list* l);
 void* hittable_list_objects(hittable_list* l);
 void hittable_list_add(hittable_list* l, hittable* o);
+
+//Hittable functions
 int hittable_list_hit(hittable_list* l, ray* r, double tmin, double tmax, hit_record* rec);
 int hittable_list_bounding_box(hittable_list* l, double t0, double t1, aabb* output_box);
+double hittable_list_pdf_value(hittable_list* l, point3* orig, vec3* v);
+vec3 hittable_list_random(hittable_list* l, vec3 orig);
+
+
+
+void hittable_list_print(hittable_list* h);
+void hittable_lists_print_all();
 
 
 #endif // __HITTABLE_LIST_H_

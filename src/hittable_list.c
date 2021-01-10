@@ -87,8 +87,6 @@ hittable_list* hittable_list_new_no_gc(int max_size){
 
 
 
-
-
 /**
  *
  * Features
@@ -114,6 +112,14 @@ void* hittable_list_objects(hittable_list* l){
     return (void*)l->objs;
 }
 
+
+
+
+/**
+ *
+ * Hittable functions
+ *
+ */
 
 ///Test a ray to see if it hits any of the objects in the list, and return the hit_record nearest the origin of the camera
 int hittable_list_hit(hittable_list* l, ray* r, double tmin, double tmax, hit_record* rec){
@@ -152,4 +158,23 @@ int hittable_list_bounding_box(hittable_list* l, double t0, double t1, aabb* out
     }
 
     return 1;
+}
+
+
+///PDF of a list
+double hittable_list_pdf_value(hittable_list* l, point3* orig, vec3* v){
+    //Average PDF of all the elements
+    double weight = 1.0/(double)l->index;
+    double sum = 0.0;
+    for(int i=0;i<l->index;++i){
+        sum += weight * hittable_pdf_value(l->objs[i], *orig, *v);
+    }
+    return sum;
+}
+
+
+///Random point on a random object of the list
+vec3 hittable_list_random(hittable_list* l, vec3 orig){
+    int int_size = l->index;
+    return hittable_random(l->objs[random_int(0, int_size-1)], orig);
 }
