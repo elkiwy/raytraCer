@@ -17,3 +17,15 @@ The goal for this project, other than an extraordinary excercise with C and a gr
 - Try porting the code to run on the GPU
 - Add more shapes and hittable objects
 - Add more predefined materials and textures
+
+
+* Examples
+On my desktop 6 core CPU the latest version of the raytracer renders the cornellbox-like scene below at 1024x1024 resolution with 512 samples  (rays casted) per pixel in around 4 minutes.
+  
+[[Final tracer][file:https://github.com/elkiwy/raytraCer/blob/master/output_highres.png]]
+
+These are other examples with the other version of the raytracer:
+
+[[Basic tracer][file:https://github.com/elkiwy/raytraCer/blob/master/BasicTracer/1080p_example.png]]
+
+[[Advanced tracer][file:https://github.com/elkiwy/raytraCer/blob/master/AdvancedTracer/finalscene.png]]
