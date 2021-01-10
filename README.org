@@ -1,1 +1,19 @@
 #+TITLE: RaytraCer
+
+RaytraCer is a C implementation (with few extras/changes) of the awesome Raytracer created by Peter Shirley in his series [[https://raytracing.github.io/books/RayTracingInOneWeekend.html][_Ray Tracing in One Weekend_]] .
+
+My changes are mainly workaround/adaptation for the absence of inheritance in C, and the *Output format* since the original used .PPM, while this is perfectly fine for that scope, I wanted a more standard and efficent format, so I choose .PNG with the help of the [[https://github.com/nothings/stb][stb_image_write.h]] library.
+
+Another change is the addition of multithreading processing obtained with the help of OpenMP macro.
+
+Since the main series was divided in 3 section, I kept the 3 stages of the code in the repository. Check the folder ~BasicTracer~ and ~AdvancedTracer~ to see the first and second stage of the project. The code in ~src~ is the final version of the raytracer.
+
+
+* The Goal
+The goal for this project, other than an extraordinary excercise with C and a great learning experience abour 3D Raytracing, is to integrate this as part of my Lisp dialect [[https://github.com/elkiwy/gisp][Gisp]] and use it to generate 3D render of scenes created live on it.
+
+* Something else I'd like to try
+- Improve multithreading support, right now the OpenMP macro is fine, but I'd like to dig deeper in it.
+- Try porting the code to run on the GPU
+- Add more shapes and hittable objects
+- Add more predefined materials and textures
