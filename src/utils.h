@@ -13,7 +13,9 @@
 
 
 // Constants
+#ifndef PI
 #define PI 3.1415926535897932385
+#endif
 
 // Utility Functions
 inline static double deg2rad(double deg) {return deg * PI / 180.0;}
