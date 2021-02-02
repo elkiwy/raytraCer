@@ -50,7 +50,7 @@ lib: $(OBJECTS_WITHOUT_MAIN)
 
 
 install: lib
-	ln -sf "$(pwd)/src" /usr/local/include/raytraCer
+	ln -sf "$(shell pwd)/src" /usr/local/include/raytraCer
 #mkdir -p /usr/local/include/raytraCer
 #find src -name \*.h -exec cp {} /usr/local/include/raytraCer \;
 
