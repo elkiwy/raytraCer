@@ -17,73 +17,8 @@
 #include "pdf.h"
 
 //STB Image write to output png
-#include "extern_stb_image_write.h"
+#include "external/stb_image_write.h"
 
-
-
-
-/**
- *
- * Main
- *
- * */
-
-///Prints a color in hex RGB
-void color_printHex(char* s, color* c){
-    printf("%s: %02x %02x %02x\n", s, (int)(256*clamp(c->x, 0.0, 0.999)), (int)(256*clamp(c->y, 0.0, 0.999)), (int)(256*clamp(c->z, 0.0, 0.999)));
-}
-
-///Write a pixel color to the output file, the color is averaged between the samples_per_pixel
-void write_color(unsigned char* pixels, color* pixel_color, int samples_per_pixel, int index){
-    double r = pixel_color->x; double g = pixel_color->y; double b = pixel_color->z;
-    double scale = 1.0 / (double)samples_per_pixel;
-
-    r = sqrt(scale * r);
-    g = sqrt(scale * g);
-    b = sqrt(scale * b);
-
-
-    pixels[index] = (unsigned char)(256*clamp(r, 0.0, 0.999));;
-    pixels[index+1] = (unsigned char)(256*clamp(g, 0.0, 0.999));;
-    pixels[index+2] = (unsigned char)(256*clamp(b, 0.0, 0.999));;
-}
-
-///Cast a ray into the world and retrieve the color of that ray
-color ray_color(ray* r, color* background, hittable_list* world, hittable_list* lights, int recursion_depth){
-    //Base case of recursion
-    if (recursion_depth <= 0){return (color){0,0,0};}
-
-    //If the ray doesn't hits anything, take the color of the background
-    hit_record rec;
-    if (hittable_list_hit(world, r, 0.001, HUGE_VAL, &rec) == 0){return *background;}
-
-    //If the thing I hit is emitting something, take the emitted color
-    scatter_record srec;
-    color emitted = material_emitted(rec.mat, &rec, rec.u, rec.v, rec.p);
-
-    //If the hit wasn't scattered take the emitted color (could be also just a black if it wasn't emitting anything)
-    if (material_scatter(rec.mat, r, &rec, &srec) == 0){return emitted;}
-    if (srec.is_specular){return vec3c_mul(srec.attenuation, ray_color(&srec.specular_ray, background, world, lights, recursion_depth-1));}
-
-    //Get the lights PDF to generate the scattered ray
-    pdf light_pdf; pdf_hittable_list light_instance;
-    pdf_hittable_list_init_stack(&light_pdf, &light_instance, lights, rec.p);
-
-    //Mix the perfect light PDF with a random cosine one
-    pdf mixture_pdf; pdf_mixture mixture_instance;
-    pdf_mixture_init_stack(&mixture_pdf, &mixture_instance, &light_pdf, srec.pdf_ptr, 0.1);
-
-    //Generate the scattered ray
-    ray scattered = {rec.p, pdf_generate(&mixture_pdf), r->time};
-    double pdf_val = pdf_value(&mixture_pdf, &scattered.dir);
-    if(srec.pdf_ptr != 0){pdf_free(srec.pdf_ptr);}
-
-    //else Recursively take the color of the scattered ray and multiply its color by the attenuation color
-    color scattered_pdf_color = vec3_mul_k(&srec.attenuation,  material_scattering_pdf(rec.mat, r, &rec, &scattered));
-    color scattered_ray_color = ray_color(&scattered, background, world, lights, recursion_depth-1);
-    color scattered_ray_color_weighted_by_pdf = vec3_div_k(&scattered_ray_color, pdf_val);
-    return vec3c_sum(emitted, vec3_mul(&scattered_pdf_color, &scattered_ray_color_weighted_by_pdf));
-}
 
 
 
@@ -120,7 +55,6 @@ hittable_list* setupScene(hittable_list* lights_output){
     box1 = hittable_rotate_init(NULL, box1, 15, Y);
     box1 = hittable_translate_init(world, box1, (vec3){265, 0, 295});
 
-
     material* glass = material_dielectric_new(1.5);
     hittable* s2 = hittable_sphere_new(world, (point3){190, 90, 190}, 90, glass);
     hittable_list_add(lights_output, s2);
@@ -129,6 +63,21 @@ hittable_list* setupScene(hittable_list* lights_output){
 }
 
 
+
+hittable_list* simpleScene(hittable_list* lights_output){
+    hittable_list* world = hittable_list_new(1024);
+    material* red = material_lambertian_new_from_color((color){0.65, 0.05, 0.05});
+    material* lig = material_light_new_from_color((color){15,15,15});
+
+    //Box and light
+    hittable* b3 = hittable_rect_new(NULL, 213, 343, 0,0, 227, 332, 554, XZ, lig);
+    b3 = hittable_flip_face_init(world, b3);
+    hittable_list_add(lights_output, b3);
+
+    hittable* s2 = hittable_sphere_new(world, (point3){190, 190, 190}, 90, red);
+
+    return world;
+}
 
 
 
@@ -165,7 +114,8 @@ int main(int argc, char** argv) {
 
     //Define objects list
     hittable_list* lights = hittable_list_new_no_gc(64);
-    hittable_list* world = setupScene(lights);
+    //hittable_list* world = setupScene(lights);
+    hittable_list* world = simpleScene(lights);
     color background = {0,0,0};
 
     //Init camera

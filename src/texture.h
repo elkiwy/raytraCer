@@ -1,11 +1,13 @@
 #ifndef __TEXTURE_H_
 #define __TEXTURE_H_
 
+#include "external/stb_image.h"
 
 
 #include "utils.h"
 #include "vec3.h"
 #include "perlin.h"
+
 
 
 

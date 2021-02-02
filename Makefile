@@ -6,6 +6,7 @@ CC := gcc-10
 
 SOURCES := $(wildcard $(SRC)/*.c)
 OBJECTS := $(patsubst $(SRC)/%.c, $(OBJ)/%.o, $(SOURCES))
+OBJECTS_WITHOUT_MAIN := $(filter-out $(OBJ)/main.o, $(OBJECTS))
 
 
 FLAGS = -g -Og -Wextra -Werror=implicit-int -Werror=incompatible-pointer-types -Werror=int-conversion -L/usr/local/lib #-fsanitize=address -fsanitize=undefined
@@ -42,6 +43,16 @@ test_lowres: build/raytraCer
 	./build/raytraCer -w 256 -h 256 -s 128 -o output_lowres.png
 
 
+lib: $(OBJECTS_WITHOUT_MAIN)
+	rm -f libtracing.a
+	ar -cvq libtracing.a $(OBJECTS_WITHOUT_MAIN)
+	cp libtracing.a /usr/local/lib/libtracing.a
+
+
+install: lib
+	ln -sf "$(pwd)/src" /usr/local/include/raytraCer
+#mkdir -p /usr/local/include/raytraCer
+#find src -name \*.h -exec cp {} /usr/local/include/raytraCer \;
 
 
 docker-build:

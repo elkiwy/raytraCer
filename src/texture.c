@@ -1,7 +1,6 @@
 #include "texture.h"
 
 
-#include "extern_stb_image.h"
 #define BYTES_PER_PIXEL 3
 
 
