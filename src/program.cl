@@ -202,6 +202,12 @@ __kernel void render(uint8 chunk_data,  __global float8* rays, __global float3* 
    //Setup world
    const int max_objects = 16;
    hittable world[16];
+   for(int i=0;i<max_objects;i++){
+      world[i].center = (float3){100,100,100};
+      world[i].radius = 0.0;
+      world[i].type = 0.0;
+   }
+
    world[0].center = (float3){0,0,-1};
    world[0].radius = 0.5;
    world[0].type = 0;
