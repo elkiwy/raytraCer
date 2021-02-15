@@ -139,7 +139,9 @@ bool worldHit(hittable* objs, int objs_count, const ray* r, hit_record *rec) {
 int rand(int* seed) {// 1 <= *seed < m
     int const a = 16807; //ie 7**5
     int const m = 2147483647; //ie 2**31-1
-    *seed = (long)(*(seed) * a) % m;
+    int val = (long)(*(seed) * a) % m;
+    if (val<0){*seed = -1*val; //TODO: optimize this, need to force positive on AMD GPU
+    }else{*seed = val;}
     return(*seed);
 }
 
