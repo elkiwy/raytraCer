@@ -245,6 +245,9 @@ int main() {
                 }
             }
 
+            //Ensure the buffer gets updated with the new set of ray each iteration (not necessary on certain GPU, but needed for others)
+            err = clEnqueueWriteBuffer(queue, ray_pool_buffer, CL_FALSE, 0, RAY_POOL_SIZE * sizeof(cl_float8), ray_pool, 0, NULL, NULL);
+
             for (int i=0; i<16; ++i){
                 //Update pass number
                 pass = (cl_int)i;
