@@ -174,6 +174,14 @@ int main() {
     const int ARGC_CHUNK_DATA = argc;
     argc++;
 
+    //Parameters_data = {SPP, RANDOM_COUNT}
+    const int RANDOM_SEEDS_COUNT = CHUNKS_HEIGHT*CHUNKS_WIDTH*0.5;
+    const int RUS_COUNT = 1024*4;
+    cl_int4 parameters_data = {{SPP, RANDOM_SEEDS_COUNT, RUS_COUNT}};
+    err = clSetKernelArg(kernel, argc, sizeof(cl_int4), &parameters_data);
+    const int ARGC_PARAMETERS_DATA = argc;
+    argc++;
+
     //Ray Pools = {0,1,2 -> Origin; 3,4,5 -> Direction; 6 -> Used flag; 7 -> ??}
     camera cam; init_camera(&cam);
     const int RAY_POOL_SIZE = (CHUNKS_WIDTH * CHUNKS_HEIGHT) * SPP;
@@ -184,7 +192,6 @@ int main() {
     argc++;
 
     //Random in unit sphere
-    const int RUS_COUNT = 1024;
     cl_float3 rus[RUS_COUNT];
     for (int i=0; i<RUS_COUNT; ++i){rus[i] = random_in_unit_sphere();}
     cl_mem rus_buffer = clCreateBuffer(context, F_R_C, RUS_COUNT * sizeof(cl_float3), rus, &err);
@@ -192,7 +199,6 @@ int main() {
     argc++;
 
     //Random seeds
-    const int RANDOM_SEEDS_COUNT = CHUNKS_HEIGHT*CHUNKS_WIDTH*0.05;
     cl_int random_seeds[RANDOM_SEEDS_COUNT];
     for (int i=0; i<RANDOM_SEEDS_COUNT; ++i){random_seeds[i] = rand();}
     cl_mem random_seeds_buffer = clCreateBuffer(context, F_R_C, RANDOM_SEEDS_COUNT * sizeof(cl_int), random_seeds, &err);

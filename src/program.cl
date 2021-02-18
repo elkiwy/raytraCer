@@ -143,7 +143,8 @@ typedef struct material {
    float3 albedo;
    float fuzzy;
    uint type;
-   float3* rus;
+   __global float3* rus;
+   int rus_count;
    int* seed;
 } material;
 
@@ -161,7 +162,7 @@ float3 reflect(float3 v, float3 n){
 bool material_scatter(const material* mat, const ray* r_in, const hit_record* rec, float3* attenuation, ray* scattered_ray) {
    //Lambertian
    if (mat->type==0){
-      float3 scatter_direction = rec->normal + rus_to_ruv(mat->rus[rand(mat->seed) % 1024]);
+      float3 scatter_direction = rec->normal + rus_to_ruv(mat->rus[rand(mat->seed) % mat->rus_count]);
 
       if (near_zero(scatter_direction)){
          scatter_direction = rec->normal;
@@ -210,18 +211,13 @@ float3 ray_color(const ray* r, const hittable* objs, int objs_count, __global fl
       ray scattered;
       float3 attenuation;
 
-      /**/
       if (material_scatter(rec.mat_ptr, r, &rec, &attenuation, &scattered)){
          //Fill bounced ray data
          bounced_ray->orig = scattered.orig;
          bounced_ray->dir  = scattered.dir;
+         //Return the attenuation color
          return attenuation;
       }
-      /*/
-      float3 target = rec.p + rus_to_rhemi(rus[rand(seed) % 1024], rec.normal);
-      bounced_ray->orig = rec.p;
-      bounced_ray->dir  = target - rec.p;
-      /**/
 
       //Return the color
       return (float3){0,0,0};
@@ -242,6 +238,7 @@ float3 ray_color(const ray* r, const hittable* objs, int objs_count, __global fl
   *
   */
 __kernel void render(uint8 chunk_data,
+                     int4 parameters_data,
                      __global float16* rays,
                      __global float3* rus,
                      __global int* seeds,
@@ -252,8 +249,14 @@ __kernel void render(uint8 chunk_data,
    const uint GLOBAL_ID = get_global_id(1)*get_global_size(0)+get_global_id(0);
    //if (GLOBAL_ID==0){printf("Last pass : %d!\n", pass_number);}
 
-   //TODO: pass SPP from CPU
-   const int SPP = 128;
+
+   //Unpack parameters data
+   const int SPP          = parameters_data[0];
+   const int RANDOM_COUNT = parameters_data[1];
+   const int RUS_COUNT    = parameters_data[2];
+
+   //Setup random generation
+   int seed = seeds[GLOBAL_ID % RANDOM_COUNT];
 
    //Unpack chunk data
    const uint CHUNK_X     = chunk_data[0];
@@ -279,22 +282,15 @@ __kernel void render(uint8 chunk_data,
    const uint CHUNK_PX = ((GROUP_X * LOCAL_W) + LOCAL_X); //relative to chunk
    const uint CHUNK_PY = ((GROUP_Y * LOCAL_H) + LOCAL_Y); //relative to chunk
 
-   //Setup random generation
-   const int RANDOM_COUNT = CHUNK_W*CHUNK_H*0.05;
-   int seed = seeds[GLOBAL_ID % RANDOM_COUNT];
-
-   //Setup rus copy
-   float3 rus_copy[1024];
-   for(int i=0;i<1024;i++){rus_copy[i] = rus[i];}
-
-   //Setup world
-   const int max_objects = 16;
+   //Setup materials
+   const int MAX_OBJECTS = 16;
    material materials[16];
-   for(int i=0;i<max_objects;i++){
+   for(int i=0;i<MAX_OBJECTS;i++){
       materials[i].albedo = (float3){0,0,0};
       materials[i].fuzzy = 0.0;
       materials[i].type = 0;
-      materials[i].rus = rus_copy;
+      materials[i].rus = rus;
+      materials[i].rus_count = RUS_COUNT;
       materials[i].seed = &seed;
    }
    materials[0].albedo = (float3){0.8,0.8,0.0};
@@ -306,37 +302,30 @@ __kernel void render(uint8 chunk_data,
    materials[3].albedo = (float3){0.8,0.6,0.2};
    materials[3].type = 1;
 
-
-
+   //Setup world objects
    hittable world[16];
-   for(int i=0;i<max_objects;i++){
+   for(int i=0;i<MAX_OBJECTS;i++){
       world[i].center = (float3){100,100,100};
       world[i].radius = 0.0;
       world[i].type = 0;
       world[i].mat = 0;
    }
-
    world[0].center = (float3){0,-100.5,-1};
    world[0].radius = 100;
    world[0].type = 0;
    world[0].mat = &materials[0];
-
    world[1].center = (float3){0,0,-1};
    world[1].radius = 0.5;
    world[1].type = 0;
    world[1].mat = &materials[1];
-
    world[2].center = (float3){-1,0,-1};
    world[2].radius = 0.5;
    world[2].type = 0;
    world[2].mat = &materials[2];
-
    world[3].center = (float3){1,0,-1};
    world[3].radius = 0.5;
    world[3].type = 0;
    world[3].mat = &materials[3];
-
-
 
 
    //Final color
@@ -358,7 +347,7 @@ __kernel void render(uint8 chunk_data,
       ray bounced_ray = {(float3){999,999,999}, (float3){999,999,999}};
       float3 sample_color;
       if (ITERATION == ITERATIONS_COUNT-1){sample_color = (float3){0,0,0};
-      }else{sample_color = ray_color(&r, &world, max_objects, rus, &bounced_ray, &seed);}
+      }else{sample_color = ray_color(&r, &world, MAX_OBJECTS, rus, &bounced_ray, &seed);}
 
       //Multiply the last sample with the new one. NB: these needs to be initiated to 1.0
       rays[i+s][10] = rays[i+s][10] * sample_color[0];
