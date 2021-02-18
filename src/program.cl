@@ -1,3 +1,35 @@
+/**
+ * Utils
+ **/
+
+
+
+//Random in unit sphere to random in hemisphere
+float3 rus_to_rhemi(float3 rus, float3 normal){
+   if(dot(rus, normal)>0.0){
+      return rus;
+   }else{
+      return -rus;
+   }
+}
+
+//Random in unit spehere to random in unit vector
+float3 rus_to_ruv(float3 rus){
+   return normalize(rus);
+}
+
+
+///Generate random number between 0 and 2147483647
+int rand(int* seed) {// 1 <= *seed < m
+    int const a = 16807; //ie 7**5
+    int const m = 2147483647; //ie 2**31-1
+    int val = (long)(*(seed) * a) % m;
+    //*seed = abs(val);
+
+    if (val<0){*seed = -1*val; //TODO: optimize this, need to force positive on AMD GPU
+    }else{*seed = val;}
+    return(*seed);
+}
 
 
 /**
@@ -16,50 +48,19 @@ float3 ray_at(const ray* r, float t) {
 
 
 
-/**
- * Camera
- **/
-
-//typedef struct camera {
-//   float3 origin;
-//   float3 lower_left_corner;
-//   float3 horizontal;
-//   float3 vertical;
-//
-//} camera;
-//
-//
-//void init_camera(camera* c) {
-//   float aspect_ratio = 1.0 / 1.0;
-//   float viewport_height = 2.0;
-//   float viewport_width = aspect_ratio * viewport_height;
-//   float focal_length = 1.0;
-//
-//   c->origin = (float3){0, 0, 0};
-//   c->horizontal = (float3){viewport_width, 0.0, 0.0};
-//   c->vertical = (float3){0.0, viewport_height, 0.0};
-//   c->lower_left_corner = c->origin - c->horizontal/2 - c->vertical/2 - (float3){0, 0, focal_length};
-//}
-//
-//
-//ray camera_get_ray(const camera* c, float u, float v) {
-//   return (ray){c->origin, c->lower_left_corner + u*c->horizontal + v*c->vertical - c->origin};
-//}
-
-
-
-
-
 
 /**
  * Hittable
  **/
+
+struct material;
 
 typedef struct hit_record {
    float3 p;
    float3 normal;
    float t;
    bool front_face;
+   struct material* mat_ptr;
 } hit_record;
 
 void set_face_normal(hit_record* rec, const ray* r, float3 outward_normal) {
@@ -73,6 +74,7 @@ typedef struct hittable {
    float3 center;
    float radius;
    uint type;
+   struct material* mat;
 } hittable;
 
 
@@ -100,6 +102,7 @@ bool hittable_hit(const hittable* obj, const ray* r, double t_min, double t_max,
       rec->normal = (rec->p - obj->center) / obj->radius;
       float3 outward_normal = (rec->p - obj->center) / obj->radius;
       set_face_normal(rec, r, outward_normal);
+      rec->mat_ptr = obj->mat;
 
       return true;
    }else{
@@ -132,18 +135,71 @@ bool worldHit(hittable* objs, int objs_count, const ray* r, hit_record *rec) {
 
 
 
+/**
+ * Materials
+ **/
+
+typedef struct material {
+   float3 albedo;
+   float fuzzy;
+   uint type;
+   float3* rus;
+   int* seed;
+} material;
 
 
 
-///Generate random number between 0 and 2147483647
-int rand(int* seed) {// 1 <= *seed < m
-    int const a = 16807; //ie 7**5
-    int const m = 2147483647; //ie 2**31-1
-    int val = (long)(*(seed) * a) % m;
-    if (val<0){*seed = -1*val; //TODO: optimize this, need to force positive on AMD GPU
-    }else{*seed = val;}
-    return(*seed);
+bool near_zero(float3 v){
+   const float s = 1e-8;
+   return (fabs(v[0])<s) && (fabs(v[1])<s) && (fabs(v[2])<s);
 }
+
+float3 reflect(float3 v, float3 n){
+   return v - 2*dot(v, n)*n;
+}
+
+bool material_scatter(const material* mat, const ray* r_in, const hit_record* rec, float3* attenuation, ray* scattered_ray) {
+   //Lambertian
+   if (mat->type==0){
+      float3 scatter_direction = rec->normal + rus_to_ruv(mat->rus[rand(mat->seed) % 1024]);
+
+      if (near_zero(scatter_direction)){
+         scatter_direction = rec->normal;
+      }
+
+      *scattered_ray = (ray){rec->p, scatter_direction};
+      *attenuation = mat->albedo;
+
+      return true;
+   //Metal
+   }else{
+
+      float3 reflected = reflect(normalize(r_in->dir), rec->normal);
+      *scattered_ray = (ray){rec->p, reflected};
+      *attenuation = mat->albedo;
+
+      return (dot(scattered_ray->dir, rec->normal) > 0);
+   }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -151,10 +207,21 @@ float3 ray_color(const ray* r, const hittable* objs, int objs_count, __global fl
    //Test hit on world
    hit_record rec;
    if (worldHit(objs, objs_count, r, &rec)){
-      //Fill bounced ray data
-      float3 target = rec.p + rec.normal + rus[rand(seed) % 1024];
+      ray scattered;
+      float3 attenuation;
+
+      /**/
+      if (material_scatter(rec.mat_ptr, r, &rec, &attenuation, &scattered)){
+         //Fill bounced ray data
+         bounced_ray->orig = scattered.orig;
+         bounced_ray->dir  = scattered.dir;
+         return attenuation;
+      }
+      /*/
+      float3 target = rec.p + rus_to_rhemi(rus[rand(seed) % 1024], rec.normal);
       bounced_ray->orig = rec.p;
       bounced_ray->dir  = target - rec.p;
+      /**/
 
       //Return the color
       return (float3){0,0,0};
@@ -174,9 +241,16 @@ float3 ray_color(const ray* r, const hittable* objs, int objs_count, __global fl
 /**
   *
   */
-__kernel void render(uint8 chunk_data,  __global float8* rays, __global float3* rus, __global int* seeds, uint pass_number, __global float4* pixels) {
+__kernel void render(uint8 chunk_data,
+                     __global float16* rays,
+                     __global float3* rus,
+                     __global int* seeds,
+                     uint2 iteration_data,
+                     __global float4* output) {
+
    //Get Global 1D ID
    const uint GLOBAL_ID = get_global_id(1)*get_global_size(0)+get_global_id(0);
+   //if (GLOBAL_ID==0){printf("Last pass : %d!\n", pass_number);}
 
    //TODO: pass SPP from CPU
    const int SPP = 128;
@@ -191,6 +265,10 @@ __kernel void render(uint8 chunk_data,  __global float8* rays, __global float3* 
    const uint IMAGE_WIDTH  = CHUNK_W*CHUNK_NUM_W;
    const uint IMAGE_HEIGHT = CHUNK_H*CHUNK_NUM_H;
 
+   //Unpack iteration data
+   const uint ITERATION = iteration_data[0];
+   const uint ITERATIONS_COUNT = iteration_data[1];
+
    //Get the pixel coordinate relative to chunk
    const uint LOCAL_X = get_local_id(0);
    const uint LOCAL_Y = get_local_id(1);
@@ -201,30 +279,68 @@ __kernel void render(uint8 chunk_data,  __global float8* rays, __global float3* 
    const uint CHUNK_PX = ((GROUP_X * LOCAL_W) + LOCAL_X); //relative to chunk
    const uint CHUNK_PY = ((GROUP_Y * LOCAL_H) + LOCAL_Y); //relative to chunk
 
-   //Setup world
-   const int max_objects = 16;
-   hittable world[16];
-   for(int i=0;i<max_objects;i++){
-      world[i].center = (float3){100,100,100};
-      world[i].radius = 0.0;
-      world[i].type = 0.0;
-   }
-
-   world[0].center = (float3){0,0,-1};
-   world[0].radius = 0.5;
-   world[0].type = 0;
-   world[1].center = (float3){0,-100.5,-1};
-   world[1].radius = 100;
-   world[1].type = 0;
-
    //Setup random generation
    const int RANDOM_COUNT = CHUNK_W*CHUNK_H*0.05;
    int seed = seeds[GLOBAL_ID % RANDOM_COUNT];
 
+   //Setup rus copy
+   float3 rus_copy[1024];
+   for(int i=0;i<1024;i++){rus_copy[i] = rus[i];}
+
+   //Setup world
+   const int max_objects = 16;
+   material materials[16];
+   for(int i=0;i<max_objects;i++){
+      materials[i].albedo = (float3){0,0,0};
+      materials[i].fuzzy = 0.0;
+      materials[i].type = 0;
+      materials[i].rus = rus_copy;
+      materials[i].seed = &seed;
+   }
+   materials[0].albedo = (float3){0.8,0.8,0.0};
+   materials[0].type = 0;
+   materials[1].albedo = (float3){0.7,0.3,0.3};
+   materials[1].type = 0;
+   materials[2].albedo = (float3){0.8,0.8,0.8};
+   materials[2].type = 1;
+   materials[3].albedo = (float3){0.8,0.6,0.2};
+   materials[3].type = 1;
+
+
+
+   hittable world[16];
+   for(int i=0;i<max_objects;i++){
+      world[i].center = (float3){100,100,100};
+      world[i].radius = 0.0;
+      world[i].type = 0;
+      world[i].mat = 0;
+   }
+
+   world[0].center = (float3){0,-100.5,-1};
+   world[0].radius = 100;
+   world[0].type = 0;
+   world[0].mat = &materials[0];
+
+   world[1].center = (float3){0,0,-1};
+   world[1].radius = 0.5;
+   world[1].type = 0;
+   world[1].mat = &materials[1];
+
+   world[2].center = (float3){-1,0,-1};
+   world[2].radius = 0.5;
+   world[2].type = 0;
+   world[2].mat = &materials[2];
+
+   world[3].center = (float3){1,0,-1};
+   world[3].radius = 0.5;
+   world[3].type = 0;
+   world[3].mat = &materials[3];
+
+
+
+
    //Final color
    const int i = (CHUNK_PY * CHUNK_W + CHUNK_PX)*SPP;
-   float3 pixel_color = {0,0,0};
-   int samples = 0;
    for (int s=0;s<SPP;++s){
       //Skip dead rays
       if (rays[i+s][6] != 0){continue;}
@@ -240,28 +356,40 @@ __kernel void render(uint8 chunk_data,  __global float8* rays, __global float3* 
 
       //Get the ray_color and retrieve an eventual bounced ray
       ray bounced_ray = {(float3){999,999,999}, (float3){999,999,999}};
-      pixel_color += ray_color(&r, &world, max_objects, rus, &bounced_ray, &seed);
+      float3 sample_color;
+      if (ITERATION == ITERATIONS_COUNT-1){sample_color = (float3){0,0,0};
+      }else{sample_color = ray_color(&r, &world, max_objects, rus, &bounced_ray, &seed);}
 
-      //Increment the samples count took for this pixel (NB: SPP - dead rays)
-      samples++;
+      //Multiply the last sample with the new one. NB: these needs to be initiated to 1.0
+      rays[i+s][10] = rays[i+s][10] * sample_color[0];
+      rays[i+s][11] = rays[i+s][11] * sample_color[1];
+      rays[i+s][12] = rays[i+s][12] * sample_color[2];
 
-      //Unpack the bounced ray into the ray pool for the next pass
-      rays[i+s][0] = bounced_ray.orig[0];
-      rays[i+s][1] = bounced_ray.orig[1];
-      rays[i+s][2] = bounced_ray.orig[2];
-      rays[i+s][3] = bounced_ray.dir[0];
-      rays[i+s][4] = bounced_ray.dir[1];
-      rays[i+s][5] = bounced_ray.dir[2];
-      rays[i+s][6] = bounced_ray.orig[0] == 999; //Set dead ray
+
+      //If I don't need to trace any more ray
+      if (bounced_ray.orig[0]>900){
+         //Set dead ray
+         rays[i+s][6] = 1.0;
+
+         //Save the final ray color into the samples to get averaged
+         const int ABSOLUTE_X = CHUNK_PX + CHUNK_X*CHUNK_W;
+         const int ABSOLUTE_Y = CHUNK_PY + CHUNK_Y*CHUNK_H;
+         const int ABSOLUTE_IND = (ABSOLUTE_Y * IMAGE_WIDTH) + ABSOLUTE_X;
+         output[ABSOLUTE_IND] += (float4){rays[i+s][10], rays[i+s][11], rays[i+s][12], 1};
+
+      //If the ray is still active
+      }else{
+         //Unpack the bounced ray into the ray pool for the next pass
+         rays[i+s][0] = bounced_ray.orig[0];
+         rays[i+s][1] = bounced_ray.orig[1];
+         rays[i+s][2] = bounced_ray.orig[2];
+         rays[i+s][3] = bounced_ray.dir[0];
+         rays[i+s][4] = bounced_ray.dir[1];
+         rays[i+s][5] = bounced_ray.dir[2];
+      }
    }
 
 
    //Save the seed for the next time this kernel gets enqueued.
    seeds[GLOBAL_ID % RANDOM_COUNT] = seed;
-
-   //Write the pixel color to the right absolute pixel of our image
-   //(NB: this accumulates the pixel color and samples count to later average those in the CPU)
-   const int ABSOLUTE_X = CHUNK_PX + CHUNK_X*CHUNK_W;
-   const int ABSOLUTE_Y = CHUNK_PY + CHUNK_Y*CHUNK_H;
-   pixels[(ABSOLUTE_Y * IMAGE_WIDTH) + ABSOLUTE_X] += (float4){pixel_color, samples};
 }

@@ -125,14 +125,15 @@ cl_float3 random_in_unit_sphere(){
     }
 }
 
-#define IMAGE_WIDTH  256*4
-#define IMAGE_HEIGHT 256*4
+#define IMAGE_WIDTH  256*2
+#define IMAGE_HEIGHT 256*2
 
 #define CHUNKS_SQRT 2
 #define CHUNKS_WIDTH  IMAGE_WIDTH / CHUNKS_SQRT
 #define CHUNKS_HEIGHT IMAGE_HEIGHT / CHUNKS_SQRT
 
 #define SPP 128 //Samples per pixels
+#define ITERATIONS 16 //Ray recursion count
 
 int main() {
     /**
@@ -176,8 +177,8 @@ int main() {
     //Ray Pools = {0,1,2 -> Origin; 3,4,5 -> Direction; 6 -> Used flag; 7 -> ??}
     camera cam; init_camera(&cam);
     const int RAY_POOL_SIZE = (CHUNKS_WIDTH * CHUNKS_HEIGHT) * SPP;
-    cl_float8* ray_pool = malloc(sizeof(cl_float8)*RAY_POOL_SIZE);
-    cl_mem ray_pool_buffer  = clCreateBuffer(context, F_RW_U, RAY_POOL_SIZE * sizeof(cl_float8), ray_pool, &err);
+    cl_float16* ray_pool = malloc(sizeof(cl_float16)*RAY_POOL_SIZE);
+    cl_mem ray_pool_buffer  = clCreateBuffer(context, F_RW_U, RAY_POOL_SIZE * sizeof(cl_float16), ray_pool, &err);
     if(err < 0) {perror("Couldn't create raypool a buffer"); exit(1);};
     err = clSetKernelArg(kernel, argc, sizeof(cl_mem),   &ray_pool_buffer);
     argc++;
@@ -198,20 +199,22 @@ int main() {
     err = clSetKernelArg(kernel, argc, sizeof(cl_mem), &random_seeds_buffer);
     argc++;
 
-    //Pass number
-    cl_uint pass = 0;
-    err = clSetKernelArg(kernel, argc, sizeof(cl_uint),  &pass);
-    const int ARGC_PASS = argc;
+    //Iterations data
+    cl_uint2 iteration_data = (cl_uint2){{0, ITERATIONS}};
+    err = clSetKernelArg(kernel, argc, sizeof(cl_uint2),  &iteration_data);
+    const int ARGC_ITERATIONS_DATA = argc;
     argc++;
 
     //Pixels
     const int PIXEL_COUNT = IMAGE_WIDTH * IMAGE_HEIGHT;
-    cl_float4 pixels[PIXEL_COUNT];
-    cl_mem pixels_buffer = clCreateBuffer(context, F_RW_C, PIXEL_COUNT * sizeof(cl_float4), pixels, &err);
+    const int OUTPUT_SIZE = PIXEL_COUNT;
+    cl_float4 output[PIXEL_COUNT];
+    cl_mem output_buffer = clCreateBuffer(context, F_RW_C, OUTPUT_SIZE * sizeof(cl_float4), output, &err);
     if(err < 0) {perror("Couldn't create pixels a buffer"); exit(1);};
-    err = clSetKernelArg(kernel, argc, sizeof(cl_mem), &pixels_buffer);
+    err = clSetKernelArg(kernel, argc, sizeof(cl_mem), &output_buffer);
 
 
+    printf("Kernel ready for execution:\n");fflush(stdout);
 
 
     /**
@@ -241,23 +244,31 @@ int main() {
                         ray_pool[ray_index].s[5] = cam.lower_left_corner[2] + u*cam.horizontal[2] + v*cam.vertical[2] - cam.origin[2];
                         ray_pool[ray_index].s[6] = 0;
                         ray_pool[ray_index].s[7] = 0;
+                        ray_pool[ray_index].s[8] = 0;
+                        ray_pool[ray_index].s[9] = 0;
+                        ray_pool[ray_index].s[10] = 1;//ray R
+                        ray_pool[ray_index].s[11] = 1;//ray G
+                        ray_pool[ray_index].s[12] = 1;//ray B
+                        ray_pool[ray_index].s[13] = 0;
+                        ray_pool[ray_index].s[14] = 0;
+                        ray_pool[ray_index].s[15] = 0;
                     }
                 }
             }
 
             //Ensure the buffer gets updated with the new set of ray each iteration (not necessary on certain GPU, but needed for others)
-            err = clEnqueueWriteBuffer(queue, ray_pool_buffer, CL_FALSE, 0, RAY_POOL_SIZE * sizeof(cl_float8), ray_pool, 0, NULL, NULL);
+            err = clEnqueueWriteBuffer(queue, ray_pool_buffer, CL_FALSE, 0, RAY_POOL_SIZE * sizeof(cl_float16), ray_pool, 0, NULL, NULL);
 
-            for (int i=0; i<16; ++i){
+            for (int i=0; i<ITERATIONS; ++i){
                 //Update pass number
-                pass = (cl_int)i;
-                clSetKernelArg(kernel, ARGC_PASS, sizeof(cl_uint), &pass);
+                iteration_data = (cl_uint2){{i, ITERATIONS}};
+                clSetKernelArg(kernel, ARGC_ITERATIONS_DATA, sizeof(cl_uint2), &iteration_data);
 
                 // Deploy the kernel to a device.
                 err = clEnqueueNDRangeKernel(queue, kernel, 2, NULL, global_size, local_size, 0, NULL, NULL);
                 //Synchronize en
-                err = clEnqueueReadBuffer(queue, pixels_buffer, CL_TRUE, 0, sizeof(pixels), pixels, 0, NULL, NULL);
-                printf("Chunk %d %d pass %d done.\n", chunk_x, chunk_y, pass);
+                err = clEnqueueReadBuffer(queue, output_buffer, CL_TRUE, 0, sizeof(output), output, 0, NULL, NULL);
+                printf("Chunk %d %d pass %d done.\n", chunk_x, chunk_y, iteration_data.s[0]);
             }
             printf("Chunk %d %d done.\n", chunk_x, chunk_y);
         }
@@ -285,18 +296,32 @@ int main() {
     /**
     ** Kernel output read and processing
      **/
-    //Print center pixel
-    int c = (IMAGE_WIDTH*(IMAGE_HEIGHT/2)) - IMAGE_WIDTH*0.5;
-    printf("Center pixel: %f %f %f\n", pixels[c].s[0], pixels[c].s[1], pixels[c].s[2]);
-
     //Process the output into an image
     const int CHANNELS = 3;
     unsigned char pixelBytes[PIXEL_COUNT * 3];
     for (int i=0; i<PIXEL_COUNT; i++){
-        float samples = pixels[i].s[3];
-        pixelBytes[(i*3)+0] = (unsigned char)((pixels[i].s[0]/samples)*255);
-        pixelBytes[(i*3)+1] = (unsigned char)((pixels[i].s[1]/samples)*255);
-        pixelBytes[(i*3)+2] = (unsigned char)((pixels[i].s[2]/samples)*255);
+
+
+        float samples_for_iteration = output[i].s[3];
+        float r = output[i].s[0]/samples_for_iteration;
+        float g = output[i].s[1]/samples_for_iteration;
+        float b = output[i].s[2]/samples_for_iteration;
+
+        if (i==0  || i == 201472 || i == 54010 || i==PIXEL_COUNT-1){printf("\n\n%d pixel iteration %d: %f %f %f (%f samples)\n", i, 0, output[i].s[0], output[i].s[1], output[i].s[2], output[i].s[3]);}
+        if (i==0  || i == 201472 || i == 54010 || i==PIXEL_COUNT-1){printf("%d final values : %f %f %f \n", i, r, g, b);}
+
+        r = sqrt(r);
+        g = sqrt(g);
+        b = sqrt(b);
+
+        if (i==0 || i == 201472 || i == 54010 || i==PIXEL_COUNT-1){printf("%d final values after gamma: %f %f %f \n", i, r, g, b);}
+
+
+        //float samples = output[i].s[3];
+        //float scale = 1.0f/samples;
+        pixelBytes[(i*3)+0] = (unsigned char)(r*255);
+        pixelBytes[(i*3)+1] = (unsigned char)(g*255);
+        pixelBytes[(i*3)+2] = (unsigned char)(b*255);
     }
 
     //Flip the final image and save it
@@ -307,7 +332,7 @@ int main() {
     //Deallocate resources
     free(ray_pool);
     clReleaseKernel(kernel);
-    clReleaseMemObject(pixels_buffer);
+    clReleaseMemObject(output_buffer);
     clReleaseMemObject(ray_pool_buffer);
     clReleaseMemObject(random_seeds_buffer);
     clReleaseMemObject(rus_buffer);
