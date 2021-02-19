@@ -5,13 +5,18 @@
 typedef struct Inputs {
    __global float16* objects;
    __global float16* materials;
+   __global float16* textures;
    uint objs_count;
    uint mats_count;
+   uint texs_count;
 
    __global float3* rus;
    int rus_count;
    int* seed;
 
+   __global float3* perlin_ranvec;
+   __global int3* perlin_perms;
+   int perlin_point_count;
 } Inputs;
 
 float3 rus_to_rhemi(float3 rus, float3 normal);
@@ -63,6 +68,15 @@ float3 random_in_unit_vector(const Inputs* i){
 
 
 
+
+
+
+
+
+
+
+
+
 /**
  * Rays
  **/
@@ -95,6 +109,7 @@ typedef struct hit_record {
    float t;
    bool front_face;
    int mat_ptr;
+   float u, v;
 } hit_record;
 
 void set_face_normal(hit_record* rec, const ray* r, float3 outward_normal);
@@ -123,6 +138,29 @@ bool hittable_hit(const __global float16* obj_ptr, const ray* r, double t_min, d
 bool worldHit(const Inputs* inputs, const ray* r, hit_record *rec);
 
 float length_squared(float3 v){return v.x*v.x + v.y*v.y + v.z*v.z;}
+
+
+
+
+#define PI 3.14159265359
+void hittable_get_uv(const __global float16* obj_ptr, float3 p, float* u, float* v);
+void hittable_get_uv(const __global float16* obj_ptr, float3 p, float* u, float* v){
+   float16 obj = *obj_ptr;
+   if(obj[OBJK_TYPE]==0){
+
+      float theta = acos(-p[1]);
+      float phi = atan2(-p[2], p[0]) + PI;
+      *u = phi / (2*PI);
+      *v = theta / PI;
+
+   }else{
+      //TODO
+   }
+}
+
+
+
+
 bool hittable_hit(const __global float16* obj_ptr, const ray* r, double t_min, double t_max, hit_record* rec) {
    float16 obj = *obj_ptr;
    if (obj[OBJK_TYPE]==0){
@@ -148,6 +186,7 @@ bool hittable_hit(const __global float16* obj_ptr, const ray* r, double t_min, d
       rec->normal = (rec->p -  center) / obj[OBJK_RAD];
       float3 outward_normal = (rec->p - center) / obj[OBJK_RAD];
       set_face_normal(rec, r, outward_normal);
+      hittable_get_uv(obj_ptr, outward_normal, &rec->u, &rec->v);
       rec->mat_ptr = (int)round(obj[OBJK_MAT]);
 
       return true;
@@ -157,6 +196,8 @@ bool hittable_hit(const __global float16* obj_ptr, const ray* r, double t_min, d
       return false;
    }
 }
+
+
 
 
 
@@ -173,6 +214,123 @@ bool worldHit(const Inputs* inputs, const ray* r, hit_record *rec) {
    }
    return hitAnything;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/**
+ * Textures
+ **/
+
+
+float noise(const Inputs* inp, float3 p);
+float noise(const Inputs* inp, float3 p) {
+   float u = p[0] - floor(p[0]);
+   float v = p[1] - floor(p[1]);
+   float w = p[2] - floor(p[2]);
+   //u = u*u*(3-2*u);
+   //v = v*v*(3-2*v);
+   //w = w*w*(3-2*w);
+
+   const int i = (int)floor(p[0]);
+   const int j = (int)floor(p[1]);
+   const int k = (int)floor(p[2]);
+
+   float3 c[2][2][2];
+
+   for(int di=0;di<2;di++){
+      for(int dj=0;dj<2;dj++){
+         for(int dk=0;dk<2;dk++){
+            c[di][dj][dk] = inp->perlin_ranvec[
+               inp->perlin_perms[(i+di) & 255][0] ^
+               inp->perlin_perms[(j+dj) & 255][1] ^
+               inp->perlin_perms[(k+dk) & 255][2]
+            ];
+         }
+      }
+   }
+
+   float uu = u*u*(3-2*u);
+   float vv = v*v*(3-2*v);
+   float ww = w*w*(3-2*w);
+   float accum = 0.0;
+
+   for (int i=0; i < 2; i++)
+      for (int j=0; j < 2; j++)
+         for (int k=0; k < 2; k++) {
+            float3 weight_v = {u-i, v-j, w-k};
+            accum += (i*uu + (1-i)*(1-uu))
+               * (j*vv + (1-j)*(1-vv))
+               * (k*ww + (1-k)*(1-ww))
+               * dot(c[i][j][k], weight_v);
+         }
+
+   return accum;
+}
+
+double turb(const Inputs* inp, float3 p, int depth) {
+   float accum = 0.0;
+   float3 temp_p = p;
+   float weight = 1.0;
+
+   for (int i = 0; i < depth; i++) {
+      accum += weight * noise(inp, temp_p);
+      weight *= 0.5;
+      temp_p *= 2;
+   }
+
+   return fabs(accum);
+}
+
+#define TEXK_TYPE 0
+#define TEXK_COL0 1
+#define TEXK_COL1 2
+#define TEXK_COL2 3
+#define TEXK_SCALE 4
+
+float3 texture_value(const Inputs* inputs, const __global float16* tex_ptr, float u, float v, float3 p);
+float3 texture_value(const Inputs* inputs, const __global float16* tex_ptr, float u, float v, float3 p){
+   float16 tex = *tex_ptr;
+   if (tex[TEXK_TYPE] == 0){
+      return (float3){tex[TEXK_COL0], tex[TEXK_COL1], tex[TEXK_COL2]};
+   }else if(tex[TEXK_TYPE] == 1){
+
+      //return (float3){1,1,1};
+
+      //float v = noise(inputs, tex[TEXK_SCALE] * p);
+      //return (float3){1,1,1} * 0.5f * (1.0f + v);
+
+      //float v = turb(inputs, tex[TEXK_SCALE] * p, 7);
+      //return (float3){1,1,1} * v;
+
+      float v = 0.5 * (1.0f + sin(turb(inputs, p, 7)*10 + tex[TEXK_SCALE]*p[2]));
+      return (float3){1,1,1} * v;
+   }
+   return (float3){0,0,0};
+}
+
+
+
+
+
+
+
+
 
 
 
@@ -200,6 +358,7 @@ bool worldHit(const Inputs* inputs, const ray* r, hit_record *rec) {
 #define MATK_ALB2 3
 #define MATK_FUZZ 4
 #define MATK_IR 5
+#define MATK_TEX_PTR 6
 
 bool near_zero(float3 v);
 float3 reflect(float3 v, float3 n);
@@ -246,7 +405,9 @@ bool material_scatter(const Inputs* inputs, const int mat_ptr, const ray* r_in, 
       }
 
       *scattered_ray = (ray){rec->p, scatter_direction};
-      *attenuation = (float3){mat[MATK_ALB0], mat[MATK_ALB1], mat[MATK_ALB2]};
+
+      //*attenuation = (float3){mat[MATK_ALB0], mat[MATK_ALB1], mat[MATK_ALB2]};
+      *attenuation = texture_value(inputs, &(inputs->textures[(int)round(mat[MATK_TEX_PTR])]), rec->u, rec->v, rec->p);
 
       return true;
    //Metal
@@ -283,6 +444,17 @@ bool material_scatter(const Inputs* inputs, const int mat_ptr, const ray* r_in, 
 
    return false;
 }
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -338,13 +510,18 @@ float3 ray_color(const ray* r, ray* bounced_ray, const Inputs* inputs) {
 __kernel void render(uint8 chunk_data,
                      int4 parameters_data,
 
-                     uint2 world_data,
+                     uint4 world_data,
                      __global float16* objects,
                      __global float16* materials,
+                     __global float16* textures,
 
                      __global float16* rays,
                      __global float3* rus,
                      __global int* seeds,
+
+                     __global float3* perlin_ranvec,
+                     __global int3* perlin_perms,
+
                      uint2 iteration_data,
                      __global float4* output) {
 
@@ -358,24 +535,26 @@ __kernel void render(uint8 chunk_data,
    //Unpack world data
    const int OBJS_COUNT = world_data[0];
    const int MATS_COUNT = world_data[1];
+   const int TEXS_COUNT = world_data[2];
 
    //Unpack parameters data
-   const int SPP          = parameters_data[0];
-   const int RANDOM_COUNT = parameters_data[1];
-   const int RUS_COUNT    = parameters_data[2];
+   const int SPP                = parameters_data[0];
+   const int RANDOM_COUNT       = parameters_data[1];
+   const int RUS_COUNT          = parameters_data[2];
+   const int PERLIN_POINT_COUNT = parameters_data[3];
 
    //Setup random generation
    int seed = seeds[GLOBAL_ID % RANDOM_COUNT];
 
    //Unpack chunk data
-   const uint CHUNK_X     = chunk_data[0];
-   const uint CHUNK_Y     = chunk_data[1];
+   //const uint CHUNK_X     = chunk_data[0];
+   //const uint CHUNK_Y     = chunk_data[1];
    const uint CHUNK_W     = chunk_data[2];
-   const uint CHUNK_H     = chunk_data[3];
-   const uint CHUNK_NUM_W = chunk_data[4];
-   const uint CHUNK_NUM_H = chunk_data[5];
-   const uint IMAGE_WIDTH  = CHUNK_W*CHUNK_NUM_W;
-   const uint IMAGE_HEIGHT = CHUNK_H*CHUNK_NUM_H;
+   //const uint CHUNK_H     = chunk_data[3];
+   //const uint CHUNK_NUM_W = chunk_data[4];
+   //const uint CHUNK_NUM_H = chunk_data[5];
+   //const uint IMAGE_WIDTH  = CHUNK_W*CHUNK_NUM_W;
+   //const uint IMAGE_HEIGHT = CHUNK_H*CHUNK_NUM_H;
 
    //Unpack iteration data
    const uint ITERATION = iteration_data[0];
@@ -396,11 +575,16 @@ __kernel void render(uint8 chunk_data,
    Inputs inputs;
    inputs.objects = objects;
    inputs.materials = materials;
+   inputs.textures = textures;
    inputs.objs_count = OBJS_COUNT;
    inputs.mats_count = MATS_COUNT;
+   inputs.texs_count = TEXS_COUNT;
    inputs.rus = rus;
    inputs.rus_count = RUS_COUNT;
    inputs.seed = &seed;
+   inputs.perlin_ranvec = perlin_ranvec;
+   inputs.perlin_perms = perlin_perms;
+   inputs.perlin_point_count = PERLIN_POINT_COUNT;
 
 
    //Final color

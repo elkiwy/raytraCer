@@ -189,6 +189,65 @@ cl_float16 get_ray(camera* cam, double s, double t) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+#define PERLIN_POINT_COUNT 256
+void perlin_init(cl_int3* perm_xyz, cl_float3* ranvec){
+    for (int i=0;i<PERLIN_POINT_COUNT; ++i){
+        ranvec[i] = float3_normalize((cl_float3){{random_double(-1, 1), random_double(-1, 1), random_double(-1, 1)}});
+    }
+    for(int i=0;i<PERLIN_POINT_COUNT;++i){
+        perm_xyz[i].s[0] = i;
+        perm_xyz[i].s[1] = i;
+        perm_xyz[i].s[2] = i;
+    }
+    for(int i=0;i<PERLIN_POINT_COUNT;++i){
+        for(int j=0;j<3;j++){
+            int target = rand() % PERLIN_POINT_COUNT;
+            int tmp = perm_xyz[i].s[j];
+            perm_xyz[i].s[j] = perm_xyz[target].s[j];
+            perm_xyz[target].s[j] = tmp;
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 typedef enum{
     MAT_LAMBERTIAN = 0,
     MAT_METAL = 1,
@@ -199,17 +258,24 @@ typedef enum{
     OBJ_SPHERE = 0
 } object_type;
 
+typedef enum{
+    TEX_SOLID = 0,
+    TEX_PERLIN = 1
+} texture_type;
 
-int setup_world(cl_float16* objs, cl_float16* mats, unsigned int obj_count, unsigned int mat_count){
+
+int setup_world(cl_float16* objs, cl_float16* mats, cl_float16* texs, unsigned int obj_count, unsigned int mat_count, unsigned int tex_count){
     //Make sure we use clean data
     for(unsigned int i=0;i<obj_count;i++){objs[i] = (cl_float16){{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};}
     for(unsigned int i=0;i<mat_count;i++){mats[i] = (cl_float16){{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};}
+    for(unsigned int i=0;i<tex_count;i++){texs[i] = (cl_float16){{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};}
 
     /* Materials:
     **  0 -> type_flag
     **  1,2,3 -> albedo
     **  4 -> fuzz
     **  5 -> ir
+    **  6 -> texture_index
     **/
 
     /* Objects:
@@ -220,14 +286,24 @@ int setup_world(cl_float16* objs, cl_float16* mats, unsigned int obj_count, unsi
     **  8 -> material_index
     **/
 
+    /* Objects:
+    **  0 -> type_flag
+    **  1,2,3 -> color
+    **  4 -> scale
+    **/
+
     int obj_ind = 0;
     int mat_ind = 0;
+    int tex_ind = 0;
 
+    texs[tex_ind].s[0] = TEX_SOLID;
+    texs[tex_ind].s[1] = 0.25;
+    texs[tex_ind].s[2] = 0.25;
+    texs[tex_ind].s[3] = 0.25;
 
-    mats[mat_ind].s[1] = 0.25;
-    mats[mat_ind].s[2] = 0.25;
-    mats[mat_ind].s[3] = 0.25;
     mats[mat_ind].s[0] = MAT_LAMBERTIAN;
+    mats[mat_ind].s[6] = tex_ind;
+
     objs[obj_ind].s[1] = 0;
     objs[obj_ind].s[2] = -1000;
     objs[obj_ind].s[3] = 0;
@@ -235,7 +311,9 @@ int setup_world(cl_float16* objs, cl_float16* mats, unsigned int obj_count, unsi
     objs[obj_ind].s[8] = mat_ind;
     mat_ind++;
     obj_ind++;
+    tex_ind++;
 
+    /*/
     //Create materials
     for(int a=-5; a<5; a++){
         for(int b=-5; b<5; b++){
@@ -312,6 +390,23 @@ int setup_world(cl_float16* objs, cl_float16* mats, unsigned int obj_count, unsi
     mat_ind++;
     obj_ind++;
 
+    /*/
+
+    texs[tex_ind].s[0] = TEX_PERLIN;
+    texs[tex_ind].s[4] = 10.0;
+
+    mats[mat_ind].s[0] = MAT_LAMBERTIAN;
+    mats[mat_ind].s[6] = tex_ind;
+
+    objs[obj_ind].s[1] = 3;
+    objs[obj_ind].s[2] = 1;
+    objs[obj_ind].s[3] = 0;
+    objs[obj_ind].s[7] = 1.0;
+    objs[obj_ind].s[8] = mat_ind;
+    mat_ind++;
+    obj_ind++;
+    tex_ind++;
+    /**/
 
     return 1;
 }
@@ -321,10 +416,10 @@ int setup_world(cl_float16* objs, cl_float16* mats, unsigned int obj_count, unsi
 
 
 
-const unsigned long IMAGE_WIDTH  = 256*4;
-const unsigned long IMAGE_HEIGHT = 256*4;
+const unsigned long IMAGE_WIDTH  = 256*2;
+const unsigned long IMAGE_HEIGHT = 256*2;
 
-const int CHUNKS_SQRT = 2;
+const int CHUNKS_SQRT = 1;
 const unsigned long CHUNKS_WIDTH  = IMAGE_WIDTH / CHUNKS_SQRT;
 const unsigned long CHUNKS_HEIGHT = IMAGE_HEIGHT / CHUNKS_SQRT;
 
@@ -378,7 +473,7 @@ int main() {
     //Parameters_data = {SPP, RANDOM_COUNT}
     const int RANDOM_SEEDS_COUNT = CHUNKS_HEIGHT*CHUNKS_WIDTH*0.5;
     const int RUS_COUNT = 1024*4;
-    cl_int4 parameters_data = {{SPP, RANDOM_SEEDS_COUNT, RUS_COUNT}};
+    cl_int4 parameters_data = {{SPP, RANDOM_SEEDS_COUNT, RUS_COUNT, PERLIN_POINT_COUNT}};
     err = clSetKernelArg(kernel, argc, sizeof(cl_int4), &parameters_data);
     const int ARGC_PARAMETERS_DATA = argc;
     argc++;
@@ -390,9 +485,11 @@ int main() {
     cl_float16 objs[OBJS_COUNT];
     const int MATS_COUNT = 128;
     cl_float16 mats[MATS_COUNT];
-    err = setup_world(&objs[0], &mats[0], OBJS_COUNT, MATS_COUNT);
-    cl_uint2 world_data = {{OBJS_COUNT, MATS_COUNT}};
-    err = clSetKernelArg(kernel, argc, sizeof(cl_uint2), &world_data);
+    const int TEXS_COUNT = 128;
+    cl_float16 texs[TEXS_COUNT];
+    err = setup_world(&objs[0], &mats[0], &texs[0], OBJS_COUNT, MATS_COUNT, TEXS_COUNT);
+    cl_uint4 world_data = {{OBJS_COUNT, MATS_COUNT, TEXS_COUNT}};
+    err = clSetKernelArg(kernel, argc, sizeof(cl_uint4), &world_data);
     argc++;
 
     //Objects
@@ -403,6 +500,11 @@ int main() {
     //Materials
     cl_mem materials_buffer = clCreateBuffer(context, F_R_C, MATS_COUNT * sizeof(cl_float16), mats, &err);
     err = clSetKernelArg(kernel, argc, sizeof(cl_mem), &materials_buffer);
+    argc++;
+
+    //Textures
+    cl_mem textures_buffer = clCreateBuffer(context, F_R_C, TEXS_COUNT * sizeof(cl_float16), texs, &err);
+    err = clSetKernelArg(kernel, argc, sizeof(cl_mem), &textures_buffer);
     argc++;
 
 
@@ -437,6 +539,20 @@ int main() {
     cl_mem random_seeds_buffer = clCreateBuffer(context, F_R_C, RANDOM_SEEDS_COUNT * sizeof(cl_int), random_seeds, &err);
     err = clSetKernelArg(kernel, argc, sizeof(cl_mem), &random_seeds_buffer);
     argc++;
+
+
+    //Perlin
+    cl_int3 perm_xyz[PERLIN_POINT_COUNT];
+    cl_float3 ranvec[PERLIN_POINT_COUNT];
+    perlin_init(&perm_xyz[0], &ranvec[0]);
+    cl_mem perlin_ranvec_buffer = clCreateBuffer(context, F_R_C, PERLIN_POINT_COUNT * sizeof(cl_float3), ranvec, &err);
+    err = clSetKernelArg(kernel, argc, sizeof(cl_mem), &perlin_ranvec_buffer);
+    argc++;
+    cl_mem perlin_perm_buffer = clCreateBuffer(context, F_R_C, PERLIN_POINT_COUNT * sizeof(cl_int3), perm_xyz, &err);
+    err = clSetKernelArg(kernel, argc, sizeof(cl_mem), &perlin_perm_buffer);
+    argc++;
+
+
 
     //Iterations data
     cl_uint2 iteration_data = (cl_uint2){{0, ITERATIONS}};
@@ -558,8 +674,13 @@ int main() {
     free(ray_pool);
     free(pixelBytes);
     clReleaseKernel(kernel);
+
+    clReleaseMemObject(perlin_ranvec_buffer);
+    clReleaseMemObject(perlin_perm_buffer);
+
     clReleaseMemObject(objects_buffer);
     clReleaseMemObject(materials_buffer);
+    clReleaseMemObject(textures_buffer);
     clReleaseMemObject(output_buffer);
     clReleaseMemObject(ray_pool_buffer);
     clReleaseMemObject(random_seeds_buffer);
