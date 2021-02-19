@@ -2,6 +2,25 @@
  * Utils
  **/
 
+typedef struct Inputs {
+   __global float16* objects;
+   __global float16* materials;
+   uint objs_count;
+   uint mats_count;
+
+   __global float3* rus;
+   int rus_count;
+   int* seed;
+
+} Inputs;
+
+float3 rus_to_rhemi(float3 rus, float3 normal);
+int rand(int* seed);
+float rand_float(int* seed);
+float3 random_in_unit_sphere(const Inputs* i);
+float3 random_in_unit_vector(const Inputs* i);
+
+
 
 
 //Random in unit sphere to random in hemisphere
@@ -11,11 +30,6 @@ float3 rus_to_rhemi(float3 rus, float3 normal){
    }else{
       return -rus;
    }
-}
-
-//Random in unit spehere to random in unit vector
-float3 rus_to_ruv(float3 rus){
-   return normalize(rus);
 }
 
 
@@ -37,6 +51,13 @@ float rand_float(int* seed){
    return (float)(v / 2147483647.0f);
 }
 
+float3 random_in_unit_sphere(const Inputs* i){
+   return i->rus[rand(i->seed) % i->rus_count];
+}
+
+float3 random_in_unit_vector(const Inputs* i){
+   return normalize(random_in_unit_sphere(i));
+}
 
 
 
@@ -51,6 +72,9 @@ typedef struct ray {
    float3 dir;
 } ray;
 
+float3 ray_at(const ray* r, float t);
+
+
 float3 ray_at(const ray* r, float t) {
    return r->orig + t * r->dir;
 }
@@ -63,38 +87,50 @@ float3 ray_at(const ray* r, float t) {
  * Hittable
  **/
 
-struct material;
+//struct material;
 
 typedef struct hit_record {
    float3 p;
    float3 normal;
    float t;
    bool front_face;
-   struct material* mat_ptr;
+   int mat_ptr;
 } hit_record;
+
+void set_face_normal(hit_record* rec, const ray* r, float3 outward_normal);
 
 void set_face_normal(hit_record* rec, const ray* r, float3 outward_normal) {
    rec->front_face = dot(r->dir, outward_normal) < 0;
    rec->normal = rec->front_face ? outward_normal :-outward_normal;
 }
 
-typedef struct hittable {
-   float3 bounds1;
-   float3 bounds2;
-   float3 center;
-   float radius;
-   uint type;
-   struct material* mat;
-} hittable;
+//typedef struct hittable {
+//   uint type;
+//   float3 p1;
+//   float3 p2;
+//   float radius;
+//   struct material* mat;
+//} hittable;
 
+#define OBJK_TYPE 0
+#define OBJK_POS0 1
+#define OBJK_POS1 2
+#define OBJK_POS2 3
+#define OBJK_RAD  7
+#define OBJK_MAT  8
+float length_squared(float3 v);
+bool hittable_hit(const __global float16* obj_ptr, const ray* r, double t_min, double t_max, hit_record* rec);
+bool worldHit(const Inputs* inputs, const ray* r, hit_record *rec);
 
 float length_squared(float3 v){return v.x*v.x + v.y*v.y + v.z*v.z;}
-bool hittable_hit(const hittable* obj, const ray* r, double t_min, double t_max, hit_record* rec) {
-   if (obj->type==0){
-      float3 oc = r->orig - obj->center;
+bool hittable_hit(const __global float16* obj_ptr, const ray* r, double t_min, double t_max, hit_record* rec) {
+   float16 obj = *obj_ptr;
+   if (obj[OBJK_TYPE]==0){
+      float3 center = {obj[OBJK_POS0],obj[OBJK_POS1],obj[OBJK_POS2]};
+      float3 oc = r->orig - center;
       float a = length_squared(r->dir);
       float half_b = dot(oc, r->dir);
-      float c = length_squared(oc) - obj->radius*obj->radius;
+      float c = length_squared(oc) - obj[OBJK_RAD]*obj[OBJK_RAD];
       float discriminant = half_b*half_b - a*c;
       if (discriminant < 0) {return false;}
 
@@ -109,10 +145,10 @@ bool hittable_hit(const hittable* obj, const ray* r, double t_min, double t_max,
 
       rec->t = root;
       rec->p = ray_at(r, rec->t);
-      rec->normal = (rec->p - obj->center) / obj->radius;
-      float3 outward_normal = (rec->p - obj->center) / obj->radius;
+      rec->normal = (rec->p -  center) / obj[OBJK_RAD];
+      float3 outward_normal = (rec->p - center) / obj[OBJK_RAD];
       set_face_normal(rec, r, outward_normal);
-      rec->mat_ptr = obj->mat;
+      rec->mat_ptr = (int)round(obj[OBJK_MAT]);
 
       return true;
    }else{
@@ -124,12 +160,12 @@ bool hittable_hit(const hittable* obj, const ray* r, double t_min, double t_max,
 
 
 
-bool worldHit(hittable* objs, int objs_count, const ray* r, hit_record *rec) {
+bool worldHit(const Inputs* inputs, const ray* r, hit_record *rec) {
    hit_record temp_rec;
    bool hitAnything = false;
    float closestSoFar = FLT_MAX;
-   for (int i = 0; i < objs_count; i++) {
-      if (hittable_hit(&objs[i], r, 0.001, closestSoFar, &temp_rec)) {
+   for (unsigned int i = 0; i < inputs->objs_count; i++) {
+      if (hittable_hit(&(inputs->objects[i]), r, 0.001, closestSoFar, &temp_rec)) {
          hitAnything = true;
          closestSoFar = temp_rec.t;
          *rec = temp_rec;
@@ -149,16 +185,27 @@ bool worldHit(hittable* objs, int objs_count, const ray* r, hit_record *rec) {
  * Materials
  **/
 
-typedef struct material {
-   float3 albedo;
-   float fuzz;
-   float ir;
-   uint type;
-   __global float3* rus;
-   int rus_count;
-   int* seed;
-} material;
+//typedef struct material {
+//   //Material definition
+//   uint type;
+//   float3 albedo;
+//   float fuzz;
+//   float ir;
+//} material;
 
+
+#define MATK_TYPE 0
+#define MATK_ALB0 1
+#define MATK_ALB1 2
+#define MATK_ALB2 3
+#define MATK_FUZZ 4
+#define MATK_IR 5
+
+bool near_zero(float3 v);
+float3 reflect(float3 v, float3 n);
+float3 refract(float3 uv, float3 n, float etai_over_etat);
+float reflectance(float cosine, float ref_idx) ;
+bool material_scatter(const Inputs* inputs, const int mat_ptr, const ray* r_in, const hit_record* rec, float3* attenuation, ray* scattered_ray) ;
 
 
 bool near_zero(float3 v){
@@ -177,9 +224,6 @@ float3 refract(float3 uv, float3 n, float etai_over_etat){
    return r_out_perp + r_out_parallel;
 }
 
-float3 mat_rus(const material* mat){
-   return rus_to_ruv(mat->rus[rand(mat->seed) % mat->rus_count]);
-}
 
 float reflectance(float cosine, float ref_idx) {
    // Use Schlick's approximation for reflectance.
@@ -191,32 +235,33 @@ float reflectance(float cosine, float ref_idx) {
 
 
 
-bool material_scatter(const material* mat, const ray* r_in, const hit_record* rec, float3* attenuation, ray* scattered_ray) {
+bool material_scatter(const Inputs* inputs, const int mat_ptr, const ray* r_in, const hit_record* rec, float3* attenuation, ray* scattered_ray) {
    //Lambertian
-   if (mat->type==0){
-      float3 scatter_direction = rec->normal + rus_to_ruv(mat_rus(mat));
+   float16 mat = inputs->materials[mat_ptr];
+   if (mat[MATK_TYPE]==0){
+      float3 scatter_direction = rec->normal + random_in_unit_vector(inputs);
 
       if (near_zero(scatter_direction)){
          scatter_direction = rec->normal;
       }
 
       *scattered_ray = (ray){rec->p, scatter_direction};
-      *attenuation = mat->albedo;
+      *attenuation = (float3){mat[MATK_ALB0], mat[MATK_ALB1], mat[MATK_ALB2]};
 
       return true;
    //Metal
-   }else if (mat->type == 1){
+   }else if (mat[MATK_TYPE] == 1){
 
       float3 reflected = reflect(normalize(r_in->dir), rec->normal);
-      *scattered_ray = (ray){rec->p, reflected + (mat->fuzz * mat_rus(mat))};
-      *attenuation = mat->albedo;
+      *scattered_ray = (ray){rec->p, reflected + (mat[MATK_FUZZ] * random_in_unit_sphere(inputs))};
+      *attenuation = (float3){mat[MATK_ALB0], mat[MATK_ALB1], mat[MATK_ALB2]};
 
       return (dot(scattered_ray->dir, rec->normal) > 0);
 
    //Dielectric
-   }else if (mat->type == 2){
+   }else if (mat[MATK_TYPE] == 2){
       *attenuation = (float3){1.0,1.0,1.0};
-      float refraction_ratio = rec->front_face ? (1.0f/mat->ir) : mat->ir;
+      float refraction_ratio = rec->front_face ? (1.0f/mat[MATK_IR]) : mat[MATK_IR];
 
       float3 unit_direction = normalize(r_in->dir);
 
@@ -226,20 +271,17 @@ bool material_scatter(const material* mat, const ray* r_in, const hit_record* re
 
       bool cannot_refract = refraction_ratio * sin_theta > 1.0f;
       float3 direction;
-
-      const uint GLOBAL_ID = get_global_id(1)*get_global_size(0)+get_global_id(0);
-
-
-      if (cannot_refract || reflectance(cos_theta, refraction_ratio) > rand_float(mat->seed)){
+      if (cannot_refract || reflectance(cos_theta, refraction_ratio) > rand_float(inputs->seed)){
          direction = reflect(unit_direction, rec->normal);
       }else{
          direction = refract(unit_direction, rec->normal, refraction_ratio);
       }
 
-
       *scattered_ray = (ray){rec->p, direction};
       return true;
    }
+
+   return false;
 }
 
 
@@ -259,18 +301,15 @@ bool material_scatter(const material* mat, const ray* r_in, const hit_record* re
 
 
 
-
-
-
-
-float3 ray_color(const ray* r, const hittable* objs, int objs_count, __global float3* rus, ray* bounced_ray, int* seed) {
+float3 ray_color(const ray* r, ray* bounced_ray, const Inputs* inputs);
+float3 ray_color(const ray* r, ray* bounced_ray, const Inputs* inputs) {
    //Test hit on world
    hit_record rec;
-   if (worldHit(objs, objs_count, r, &rec)){
+   if (worldHit(inputs, r, &rec)){
       ray scattered;
       float3 attenuation;
 
-      if (material_scatter(rec.mat_ptr, r, &rec, &attenuation, &scattered)){
+      if (material_scatter(inputs, rec.mat_ptr, r, &rec, &attenuation, &scattered)){
          //Fill bounced ray data
          bounced_ray->orig = scattered.orig;
          bounced_ray->dir  = scattered.dir;
@@ -298,6 +337,11 @@ float3 ray_color(const ray* r, const hittable* objs, int objs_count, __global fl
   */
 __kernel void render(uint8 chunk_data,
                      int4 parameters_data,
+
+                     uint2 world_data,
+                     __global float16* objects,
+                     __global float16* materials,
+
                      __global float16* rays,
                      __global float3* rus,
                      __global int* seeds,
@@ -310,6 +354,10 @@ __kernel void render(uint8 chunk_data,
 
 
 
+
+   //Unpack world data
+   const int OBJS_COUNT = world_data[0];
+   const int MATS_COUNT = world_data[1];
 
    //Unpack parameters data
    const int SPP          = parameters_data[0];
@@ -343,142 +391,16 @@ __kernel void render(uint8 chunk_data,
    const uint CHUNK_PX = ((GROUP_X * LOCAL_W) + LOCAL_X); //relative to chunk
    const uint CHUNK_PY = ((GROUP_Y * LOCAL_H) + LOCAL_Y); //relative to chunk
 
-   //Setup materials
-   const int MAX_OBJECTS = 128;
-   material materials[128];
-   for(int i=0;i<MAX_OBJECTS;i++){
-      materials[i].albedo = (float3){0,0,0};
-      materials[i].fuzz = 0.0;
-      materials[i].type = 0;
-      materials[i].rus = rus;
-      materials[i].rus_count = RUS_COUNT;
-      materials[i].seed = &seed;
-   }
 
-
-
-   materials[0].albedo = (float3){0.8,0.8,0.0};
-   materials[0].type = 0;
-   //materials[1].albedo = (float3){0.7,0.3,0.3};
-   //materials[1].type = 0;
-   materials[1].ir = 1.5;
-   materials[1].type = 2;
-   materials[2].albedo = (float3){0.8,0.8,0.8};
-   materials[2].type = 1;
-   materials[2].fuzz = 0.3;
-   materials[3].albedo = (float3){0.8,0.6,0.2};
-   materials[3].type = 1;
-   materials[3].fuzz = 1.0;
-
-   //Setup world objects
-   hittable world[128];
-   for(int i=0;i<MAX_OBJECTS;i++){
-      world[i].center = (float3){100,100,100};
-      world[i].radius = 0.0;
-      world[i].type = 0;
-      world[i].mat = 0;
-   }
-   //world[0].center = (float3){0,-100.5,-1};
-   //world[0].radius = 100;
-   //world[0].type = 0;
-   //world[0].mat = &materials[0];
-
-   //world[1].center = (float3){0,0,-1};
-   //world[1].radius = 0.5;
-   //world[1].type = 0;
-   //world[1].mat = &materials[1];
-   //world[4].center = (float3){0,0,-1};
-   //world[4].radius = -0.45;
-   //world[4].type = 0;
-   //world[4].mat = &materials[1];
-
-
-   //world[2].center = (float3){-1,0,-1};
-   //world[2].radius = 0.5;
-   //world[2].type = 0;
-   //world[2].mat = &materials[2];
-   //world[3].center = (float3){1,0,-1};
-   //world[3].radius = 0.5;
-   //world[3].type = 0;
-   //world[3].mat = &materials[3];
-
-
-
-   int world_seed = 1;
-
-   int mat_ind = 0;
-   int obj_ind = 0;
-
-   materials[mat_ind].albedo  = (float3){0.5,0.5,0.5};
-   materials[mat_ind].type = 0;
-   world[obj_ind].center = (float3){0,-1000,0};
-   world[obj_ind].radius = 1000;
-   world[obj_ind].mat = &materials[mat_ind];
-   mat_ind++;
-   obj_ind++;
-
-
-
-   for(int a=-5; a<5; a++){
-      for(int b=-5; b<5; b++){
-         float rand_mat = rand_float(&world_seed);
-         float3 center = {a + 0.9f * rand_float(&world_seed), 0.2f, b + 0.9f * rand_float(&world_seed),};
-
-         world[obj_ind].center = center;
-         world[obj_ind].radius = 0.2f;
-
-         if (rand_mat < 0.8){
-            materials[mat_ind].albedo  = (float3){rand_float(&world_seed),rand_float(&world_seed),rand_float(&world_seed)};
-            materials[mat_ind].albedo *= (float3){rand_float(&world_seed),rand_float(&world_seed),rand_float(&world_seed)};
-            materials[mat_ind].type = 0;
-            world[obj_ind].mat = &materials[mat_ind];
-         }else if (rand_mat < 0.95){
-            materials[mat_ind].albedo = ((float3){rand_float(&world_seed),rand_float(&world_seed),rand_float(&world_seed)}*0.5f) + 0.5f;
-            materials[mat_ind].fuzz = rand_float(&world_seed)*0.5f;
-            materials[mat_ind].type = 1;
-            world[obj_ind].mat = &materials[mat_ind];
-         }else{
-            materials[mat_ind].ir = 1.5;
-            materials[mat_ind].type = 2;
-            world[obj_ind].mat = &materials[mat_ind];
-         }
-         mat_ind++;
-         obj_ind++;
-      }
-   }
-
-
-
-   materials[mat_ind].ir = 1.5;
-   materials[mat_ind].type = 2;
-   world[obj_ind].center = (float3){0,1,0};
-   world[obj_ind].radius = 1.0;
-   world[obj_ind].mat = &materials[mat_ind];
-   mat_ind++;
-   obj_ind++;
-
-
-   materials[mat_ind].albedo  = (float3){0.4,0.2,0.1};
-   materials[mat_ind].type = 0;
-   world[obj_ind].center = (float3){-4,1,0};
-   world[obj_ind].radius = 1.0;
-   world[obj_ind].mat = &materials[mat_ind];
-   mat_ind++;
-   obj_ind++;
-
-   materials[mat_ind].albedo = (float3){0.7,0.6,0.5};
-   materials[mat_ind].fuzz = 0.0;
-   materials[mat_ind].type = 1;
-   world[obj_ind].center = (float3){4,1,0};
-   world[obj_ind].radius = 1.0;
-   world[obj_ind].mat = &materials[mat_ind];
-   mat_ind++;
-   obj_ind++;
-
-
-
-
-
+   //Pack the input struct
+   Inputs inputs;
+   inputs.objects = objects;
+   inputs.materials = materials;
+   inputs.objs_count = OBJS_COUNT;
+   inputs.mats_count = MATS_COUNT;
+   inputs.rus = rus;
+   inputs.rus_count = RUS_COUNT;
+   inputs.seed = &seed;
 
 
    //Final color
@@ -500,7 +422,7 @@ __kernel void render(uint8 chunk_data,
       ray bounced_ray = {(float3){999,999,999}, (float3){999,999,999}};
       float3 sample_color;
       if (ITERATION == ITERATIONS_COUNT-1){sample_color = (float3){0,0,0};
-      }else{sample_color = ray_color(&r, &world, MAX_OBJECTS, rus, &bounced_ray, &seed);}
+      }else{sample_color = ray_color(&r, &bounced_ray, &inputs);}
 
       //Multiply the last sample with the new one. NB: these needs to be initiated to 1.0
       rays[i+s][10] = rays[i+s][10] * sample_color[0];

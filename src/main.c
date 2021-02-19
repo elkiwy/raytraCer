@@ -189,6 +189,137 @@ cl_float16 get_ray(camera* cam, double s, double t) {
 
 
 
+typedef enum{
+    MAT_LAMBERTIAN = 0,
+    MAT_METAL = 1,
+    MAT_DIELECTRIC = 2
+} material_type;
+
+typedef enum{
+    OBJ_SPHERE = 0
+} object_type;
+
+
+int setup_world(cl_float16* objs, cl_float16* mats, unsigned int obj_count, unsigned int mat_count){
+    //Make sure we use clean data
+    for(unsigned int i=0;i<obj_count;i++){objs[i] = (cl_float16){{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};}
+    for(unsigned int i=0;i<mat_count;i++){mats[i] = (cl_float16){{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};}
+
+    /* Materials:
+    **  0 -> type_flag
+    **  1,2,3 -> albedo
+    **  4 -> fuzz
+    **  5 -> ir
+    **/
+
+    /* Objects:
+    **  0 -> type_flag
+    **  1,2,3 -> point1
+    **  4,5,6 -> point2
+    **  7 -> radius
+    **  8 -> material_index
+    **/
+
+    int obj_ind = 0;
+    int mat_ind = 0;
+
+
+    mats[mat_ind].s[1] = 0.25;
+    mats[mat_ind].s[2] = 0.25;
+    mats[mat_ind].s[3] = 0.25;
+    mats[mat_ind].s[0] = MAT_LAMBERTIAN;
+    objs[obj_ind].s[1] = 0;
+    objs[obj_ind].s[2] = -1000;
+    objs[obj_ind].s[3] = 0;
+    objs[obj_ind].s[7] = 1000;
+    objs[obj_ind].s[8] = mat_ind;
+    mat_ind++;
+    obj_ind++;
+
+    //Create materials
+    for(int a=-5; a<5; a++){
+        for(int b=-5; b<5; b++){
+            //Type
+            objs[obj_ind].s[0] = OBJ_SPHERE;
+
+            //Center
+            objs[obj_ind].s[1] = a + 0.9f * random_double_unit();
+            objs[obj_ind].s[2] = 0.2f;
+            objs[obj_ind].s[3] = b + 0.9f * random_double_unit();
+
+            //Radius
+            objs[obj_ind].s[7] = 0.2f;
+
+            double rand_mat = random_double_unit();
+            if (rand_mat < 0.8){
+                mats[mat_ind].s[0] = MAT_LAMBERTIAN;
+                mats[mat_ind].s[1] = random_double_unit() * random_double_unit();
+                mats[mat_ind].s[2] = random_double_unit() * random_double_unit();
+                mats[mat_ind].s[3] = random_double_unit() * random_double_unit();
+                objs[obj_ind].s[8] = mat_ind;
+            }else if (rand_mat < 0.95){
+                mats[mat_ind].s[0] = MAT_METAL;
+                mats[mat_ind].s[1] = (random_double_unit()*0.5f)+0.5f;
+                mats[mat_ind].s[2] = (random_double_unit()*0.5f)+0.5f;
+                mats[mat_ind].s[3] = (random_double_unit()*0.5f)+0.5f;
+                mats[mat_ind].s[4] = random_double_unit()*0.5f;
+                objs[obj_ind].s[8] = mat_ind;
+            }else{
+                mats[mat_ind].s[0] = MAT_DIELECTRIC;
+                mats[mat_ind].s[5] = 1.5;
+                objs[obj_ind].s[8] = mat_ind;
+            }
+            mat_ind++;
+            obj_ind++;
+        }
+    }
+
+
+
+    mats[mat_ind].s[5] = 1.5;
+    mats[mat_ind].s[0] = MAT_DIELECTRIC;
+    objs[obj_ind].s[1] = 0;
+    objs[obj_ind].s[2] = 1;
+    objs[obj_ind].s[3] = 0;
+    objs[obj_ind].s[7] = 1.0;
+    objs[obj_ind].s[8] = mat_ind;
+    mat_ind++;
+    obj_ind++;
+
+
+    mats[mat_ind].s[1] = 0.4;
+    mats[mat_ind].s[2] = 0.2;
+    mats[mat_ind].s[3] = 0.1;
+    mats[mat_ind].s[0] = MAT_LAMBERTIAN;
+    objs[obj_ind].s[1] = -4;
+    objs[obj_ind].s[2] = 1;
+    objs[obj_ind].s[3] = 0;
+    objs[obj_ind].s[7] = 1.0;
+    objs[obj_ind].s[8] = mat_ind;
+    mat_ind++;
+    obj_ind++;
+
+    mats[mat_ind].s[1] = 0.7;
+    mats[mat_ind].s[2] = 0.6;
+    mats[mat_ind].s[3] = 0.5;
+    mats[mat_ind].s[4] = 0.1;
+    mats[mat_ind].s[0] = MAT_METAL;
+    objs[obj_ind].s[1] = 3;
+    objs[obj_ind].s[2] = 1;
+    objs[obj_ind].s[3] = 0;
+    objs[obj_ind].s[7] = 1.0;
+    objs[obj_ind].s[8] = mat_ind;
+    mat_ind++;
+    obj_ind++;
+
+
+    return 1;
+}
+
+
+
+
+
 
 const unsigned long IMAGE_WIDTH  = 256*4;
 const unsigned long IMAGE_HEIGHT = 256*4;
@@ -251,6 +382,31 @@ int main() {
     err = clSetKernelArg(kernel, argc, sizeof(cl_int4), &parameters_data);
     const int ARGC_PARAMETERS_DATA = argc;
     argc++;
+
+
+
+    //World setup
+    const int OBJS_COUNT = 128;
+    cl_float16 objs[OBJS_COUNT];
+    const int MATS_COUNT = 128;
+    cl_float16 mats[MATS_COUNT];
+    err = setup_world(&objs[0], &mats[0], OBJS_COUNT, MATS_COUNT);
+    cl_uint2 world_data = {{OBJS_COUNT, MATS_COUNT}};
+    err = clSetKernelArg(kernel, argc, sizeof(cl_uint2), &world_data);
+    argc++;
+
+    //Objects
+    cl_mem objects_buffer = clCreateBuffer(context, F_R_C, OBJS_COUNT * sizeof(cl_float16), objs, &err);
+    err = clSetKernelArg(kernel, argc, sizeof(cl_mem), &objects_buffer);
+    argc++;
+
+    //Materials
+    cl_mem materials_buffer = clCreateBuffer(context, F_R_C, MATS_COUNT * sizeof(cl_float16), mats, &err);
+    err = clSetKernelArg(kernel, argc, sizeof(cl_mem), &materials_buffer);
+    argc++;
+
+
+
 
     //Ray Pools = {0,1,2 -> Origin; 3,4,5 -> Direction; 6 -> Used flag; 7 -> ??}
     cl_float3 from = {{13, 2, 3}};
@@ -365,7 +521,7 @@ int main() {
                 const unsigned long image_y = current_chunk_y + (chunk_y*CHUNKS_HEIGHT);
                 const unsigned long image_ind = (image_y * IMAGE_WIDTH) + image_x;
 
-                //if (i==0){printf("\n\n%d pixel iteration %d: %f %f %f (%f samples)\n", i, 0, output[i].s[0], output[i].s[1], output[i].s[2], output[i].s[3]);}
+                if (i==0){printf("\n\n%d pixel iteration %d: %f %f %f (%f samples)\n", i, 0, output[i].s[0], output[i].s[1], output[i].s[2], output[i].s[3]);}
                 //Average of samples
                 float samples_for_iteration = output[i].s[3];
                 float r = output[i].s[0]/samples_for_iteration;
@@ -376,7 +532,7 @@ int main() {
                 r = sqrt(r);
                 g = sqrt(g);
                 b = sqrt(b);
-                //if (i==0){printf("%d final values : %f %f %f \n", i, r, g, b);}
+                if (i==0){printf("%d final values : %f %f %f \n", i, r, g, b);}
 
                 //Write to pixel buffer
                 pixelBytes[(image_ind*3)+0] = (unsigned char)(r*255);
@@ -402,6 +558,8 @@ int main() {
     free(ray_pool);
     free(pixelBytes);
     clReleaseKernel(kernel);
+    clReleaseMemObject(objects_buffer);
+    clReleaseMemObject(materials_buffer);
     clReleaseMemObject(output_buffer);
     clReleaseMemObject(ray_pool_buffer);
     clReleaseMemObject(random_seeds_buffer);
