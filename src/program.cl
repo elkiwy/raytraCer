@@ -514,10 +514,8 @@ __kernel void render(uint8 chunk_data,
          rays[i+s][6] = 1.0;
 
          //Save the final ray color into the samples to get averaged
-         const int ABSOLUTE_X = CHUNK_PX + CHUNK_X*CHUNK_W;
-         const int ABSOLUTE_Y = CHUNK_PY + CHUNK_Y*CHUNK_H;
-         const int ABSOLUTE_IND = (ABSOLUTE_Y * IMAGE_WIDTH) + ABSOLUTE_X;
-         output[ABSOLUTE_IND] += (float4){rays[i+s][10], rays[i+s][11], rays[i+s][12], 1};
+         const int CHUNK_IND = (CHUNK_PY * CHUNK_W) + CHUNK_PX;
+         output[CHUNK_IND] += (float4){rays[i+s][10], rays[i+s][11], rays[i+s][12], 1};
 
          //If the ray is still active
       }else{

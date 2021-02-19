@@ -190,15 +190,15 @@ cl_float16 get_ray(camera* cam, double s, double t) {
 
 
 
-#define IMAGE_WIDTH  256*4
-#define IMAGE_HEIGHT 256*4
+const unsigned long IMAGE_WIDTH  = 256*4;
+const unsigned long IMAGE_HEIGHT = 256*4;
 
-#define CHUNKS_SQRT 2
-#define CHUNKS_WIDTH  IMAGE_WIDTH / CHUNKS_SQRT
-#define CHUNKS_HEIGHT IMAGE_HEIGHT / CHUNKS_SQRT
+const int CHUNKS_SQRT = 2;
+const unsigned long CHUNKS_WIDTH  = IMAGE_WIDTH / CHUNKS_SQRT;
+const unsigned long CHUNKS_HEIGHT = IMAGE_HEIGHT / CHUNKS_SQRT;
 
-#define SPP 128 //Samples per pixels
-#define ITERATIONS 16 //Ray recursion count
+const int SPP = 128; //Samples per pixels
+const int ITERATIONS = 16; //Ray recursion count
 
 int main() {
     /**
@@ -235,6 +235,11 @@ int main() {
 
     //Chunk_data = {x, y, w, h, num_h, num_v, ?, ?}
     cl_uint8 chunk_data = {{0,0,CHUNKS_WIDTH,CHUNKS_HEIGHT, CHUNKS_SQRT, CHUNKS_SQRT, 0, 0}};
+    printf("IMAGE_WIDTH: %lu\n", IMAGE_WIDTH);
+    printf("IMAGE_HEIGHT: %lu\n", IMAGE_HEIGHT);
+    printf("CHUNKS_WIDTH: %lu\n", CHUNKS_WIDTH);
+    printf("CHUNKS_HEIGHT: %lu\n", CHUNKS_HEIGHT);
+    printf("CHUNKS NUMBER: %d\n", CHUNKS_SQRT * CHUNKS_SQRT);
     err = clSetKernelArg(kernel, argc, sizeof(cl_uint8), &chunk_data);
     const int ARGC_CHUNK_DATA = argc;
     argc++;
@@ -254,11 +259,13 @@ int main() {
     float dist_to_focus = 10.0;
     float aperture = 0.1;
     camera cam; init_camera(&cam, from, to, vup, 20.0, 1.0, aperture, dist_to_focus);
-    const int RAY_POOL_SIZE = (CHUNKS_WIDTH * CHUNKS_HEIGHT) * SPP;
+    const unsigned long RAY_POOL_SIZE = (CHUNKS_WIDTH * CHUNKS_HEIGHT) * SPP;
+    printf("Creating ray_pool of size %luk\n", RAY_POOL_SIZE/1000);fflush(stdout);
     cl_float16* ray_pool = malloc(sizeof(cl_float16)*RAY_POOL_SIZE);
     cl_mem ray_pool_buffer  = clCreateBuffer(context, F_RW_U, RAY_POOL_SIZE * sizeof(cl_float16), ray_pool, &err);
     if(err < 0) {perror("Couldn't create raypool a buffer"); exit(1);};
     err = clSetKernelArg(kernel, argc, sizeof(cl_mem),   &ray_pool_buffer);
+    printf("Created ray_pool\n");fflush(stdout);
     argc++;
 
     //Random in unit sphere
@@ -282,20 +289,28 @@ int main() {
     argc++;
 
     //Pixels
-    const int PIXEL_COUNT = IMAGE_WIDTH * IMAGE_HEIGHT;
-    const int OUTPUT_SIZE = PIXEL_COUNT;
-    cl_float4 output[PIXEL_COUNT];
-    cl_mem output_buffer = clCreateBuffer(context, F_RW_C, OUTPUT_SIZE * sizeof(cl_float4), output, &err);
+    const unsigned long PIXEL_COUNT_PER_CHUNK = CHUNKS_WIDTH * CHUNKS_HEIGHT;
+    printf("Creating output of size %luk\n", PIXEL_COUNT_PER_CHUNK/1000);fflush(stdout);
+    cl_float4 output[PIXEL_COUNT_PER_CHUNK];
+    cl_mem output_buffer = clCreateBuffer(context, F_RW_C, PIXEL_COUNT_PER_CHUNK * sizeof(cl_float4), output, &err);
     if(err < 0) {perror("Couldn't create pixels a buffer"); exit(1);};
     err = clSetKernelArg(kernel, argc, sizeof(cl_mem), &output_buffer);
+    printf("Created output\n");fflush(stdout);
 
 
     printf("Kernel ready for execution:\n");fflush(stdout);
 
 
+
+
     /**
     ** Pass execution
      **/
+    const unsigned long PIXEL_COUNT_PER_IMAGE = IMAGE_WIDTH * IMAGE_HEIGHT;
+    const int CHANNELS = 3;
+    unsigned char* pixelBytes = malloc(sizeof(unsigned char)*(PIXEL_COUNT_PER_IMAGE*3));
+
+
     for (int chunk_y = 0; chunk_y < CHUNKS_SQRT; chunk_y++){
         for (int chunk_x = 0; chunk_x < CHUNKS_SQRT; chunk_x++){
             //Update chunk data
@@ -303,10 +318,11 @@ int main() {
             chunk_data.s[1] = chunk_y;
             clSetKernelArg(kernel, ARGC_CHUNK_DATA, sizeof(cl_uint8), &chunk_data); // pass
 
+            //Update ray pool data
             const float INV_W = 1.0f/(IMAGE_WIDTH-1);
             const float INV_H = 1.0f/(IMAGE_HEIGHT-1);
-            for (int py=0; py<CHUNKS_HEIGHT; ++py){
-                for (int px=0; px<CHUNKS_WIDTH; ++px){
+            for (unsigned long py=0; py<CHUNKS_HEIGHT; ++py){
+                for (unsigned long px=0; px<CHUNKS_WIDTH; ++px){
                     for (int s=0;s<SPP;++s){
                         float u = ((float)(px + CHUNKS_WIDTH*chunk_x) + random_double_unit()) * INV_W;
                         float v = ((float)(py + CHUNKS_HEIGHT*chunk_y) + random_double_unit()) * INV_H;
@@ -316,8 +332,12 @@ int main() {
                 }
             }
 
+            //Update output buffer
+            for (unsigned long i=0;i<PIXEL_COUNT_PER_CHUNK;i++){output[i].s[0] = 0; output[i].s[1] = 0; output[i].s[2] = 0; output[i].s[3] = 0;}
+
             //Ensure the buffer gets updated with the new set of ray each iteration (not necessary on certain GPU, but needed for others)
             err = clEnqueueWriteBuffer(queue, ray_pool_buffer, CL_FALSE, 0, RAY_POOL_SIZE * sizeof(cl_float16), ray_pool, 0, NULL, NULL);
+            err = clEnqueueWriteBuffer(queue, output_buffer, CL_FALSE, 0, PIXEL_COUNT_PER_CHUNK * sizeof(cl_float4), output, 0, NULL, NULL);
 
             for (int i=0; i<ITERATIONS; ++i){
                 //Update pass number
@@ -328,61 +348,50 @@ int main() {
                 err = clEnqueueNDRangeKernel(queue, kernel, 2, NULL, global_size, local_size, 0, NULL, NULL);
                 //Synchronize en
                 err = clEnqueueReadBuffer(queue, output_buffer, CL_TRUE, 0, sizeof(output), output, 0, NULL, NULL);
-                printf("Chunk %d %d pass %d done.\n", chunk_x, chunk_y, iteration_data.s[0]);
+                //printf("Chunk %d %d pass %d done.\n", chunk_x, chunk_y, iteration_data.s[0]);
             }
-            printf("Chunk %d %d done.\n", chunk_x, chunk_y);
+            printf("Chunk %d %d processed, now writing...\n", chunk_x, chunk_y);
+
+
+
+            /**
+            ** Kernel output read and processing
+            **/
+            //Process the output into an image
+            for (unsigned long i=0; i<PIXEL_COUNT_PER_CHUNK; i++){
+                const unsigned long current_chunk_x = i % CHUNKS_WIDTH;
+                const unsigned long current_chunk_y = i / CHUNKS_WIDTH;
+                const unsigned long image_x = current_chunk_x + (chunk_x*CHUNKS_WIDTH);
+                const unsigned long image_y = current_chunk_y + (chunk_y*CHUNKS_HEIGHT);
+                const unsigned long image_ind = (image_y * IMAGE_WIDTH) + image_x;
+
+                //if (i==0){printf("\n\n%d pixel iteration %d: %f %f %f (%f samples)\n", i, 0, output[i].s[0], output[i].s[1], output[i].s[2], output[i].s[3]);}
+                //Average of samples
+                float samples_for_iteration = output[i].s[3];
+                float r = output[i].s[0]/samples_for_iteration;
+                float g = output[i].s[1]/samples_for_iteration;
+                float b = output[i].s[2]/samples_for_iteration;
+
+                //Gamma correction
+                r = sqrt(r);
+                g = sqrt(g);
+                b = sqrt(b);
+                //if (i==0){printf("%d final values : %f %f %f \n", i, r, g, b);}
+
+                //Write to pixel buffer
+                pixelBytes[(image_ind*3)+0] = (unsigned char)(r*255);
+                pixelBytes[(image_ind*3)+1] = (unsigned char)(g*255);
+                pixelBytes[(image_ind*3)+2] = (unsigned char)(b*255);
+                //if (i>180220){printf("done! %d\n", image_ind);fflush(stdout);}
+            }
+            printf("Chunk %d %d completed.\n", chunk_x, chunk_y);
+
+
         }
     }
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    /**
-    ** Kernel output read and processing
-     **/
-    //Process the output into an image
-    const int CHANNELS = 3;
-    unsigned char pixelBytes[PIXEL_COUNT * 3];
-    for (int i=0; i<PIXEL_COUNT; i++){
-
-
-        float samples_for_iteration = output[i].s[3];
-        float r = output[i].s[0]/samples_for_iteration;
-        float g = output[i].s[1]/samples_for_iteration;
-        float b = output[i].s[2]/samples_for_iteration;
-
-        if (i==0  || i == 201472 || i == 54010 || i==PIXEL_COUNT-1){printf("\n\n%d pixel iteration %d: %f %f %f (%f samples)\n", i, 0, output[i].s[0], output[i].s[1], output[i].s[2], output[i].s[3]);}
-        if (i==0  || i == 201472 || i == 54010 || i==PIXEL_COUNT-1){printf("%d final values : %f %f %f \n", i, r, g, b);}
-
-        r = sqrt(r);
-        g = sqrt(g);
-        b = sqrt(b);
-
-        if (i==0 || i == 201472 || i == 54010 || i==PIXEL_COUNT-1){printf("%d final values after gamma: %f %f %f \n", i, r, g, b);}
-
-
-        //float samples = output[i].s[3];
-        //float scale = 1.0f/samples;
-        pixelBytes[(i*3)+0] = (unsigned char)(r*255);
-        pixelBytes[(i*3)+1] = (unsigned char)(g*255);
-        pixelBytes[(i*3)+2] = (unsigned char)(b*255);
-    }
 
     //Flip the final image and save it
     stbi_flip_vertically_on_write(1);
@@ -391,6 +400,7 @@ int main() {
 
     //Deallocate resources
     free(ray_pool);
+    free(pixelBytes);
     clReleaseKernel(kernel);
     clReleaseMemObject(output_buffer);
     clReleaseMemObject(ray_pool_buffer);
