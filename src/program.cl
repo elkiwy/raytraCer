@@ -31,6 +31,16 @@ int rand(int* seed) {// 1 <= *seed < m
     return(*seed);
 }
 
+///Generate random float number between 0-1
+float rand_float(int* seed){
+   float v = rand(seed);
+   return (float)(v / 2147483647.0f);
+}
+
+
+
+
+
 
 /**
  * Rays
@@ -141,7 +151,8 @@ bool worldHit(hittable* objs, int objs_count, const ray* r, hit_record *rec) {
 
 typedef struct material {
    float3 albedo;
-   float fuzzy;
+   float fuzz;
+   float ir;
    uint type;
    __global float3* rus;
    int rus_count;
@@ -159,10 +170,31 @@ float3 reflect(float3 v, float3 n){
    return v - 2*dot(v, n)*n;
 }
 
+float3 refract(float3 uv, float3 n, float etai_over_etat){
+   float cos_theta = fmin((float)dot(-uv, n), 1.0f);
+   float3 r_out_perp = etai_over_etat * (uv + cos_theta * n);
+   float3 r_out_parallel = -sqrt(fabs(1.0f - length_squared(r_out_perp))) * n;
+   return r_out_perp + r_out_parallel;
+}
+
+float3 mat_rus(const material* mat){
+   return rus_to_ruv(mat->rus[rand(mat->seed) % mat->rus_count]);
+}
+
+float reflectance(float cosine, float ref_idx) {
+   // Use Schlick's approximation for reflectance.
+   float r0 = (1.0f-ref_idx) / (1.0f+ref_idx);
+   r0 = r0*r0;
+   return r0 + (1.0f-r0)*pow((1.0f - cosine),5.0f);
+}
+
+
+
+
 bool material_scatter(const material* mat, const ray* r_in, const hit_record* rec, float3* attenuation, ray* scattered_ray) {
    //Lambertian
    if (mat->type==0){
-      float3 scatter_direction = rec->normal + rus_to_ruv(mat->rus[rand(mat->seed) % mat->rus_count]);
+      float3 scatter_direction = rec->normal + rus_to_ruv(mat_rus(mat));
 
       if (near_zero(scatter_direction)){
          scatter_direction = rec->normal;
@@ -173,13 +205,40 @@ bool material_scatter(const material* mat, const ray* r_in, const hit_record* re
 
       return true;
    //Metal
-   }else{
+   }else if (mat->type == 1){
 
       float3 reflected = reflect(normalize(r_in->dir), rec->normal);
-      *scattered_ray = (ray){rec->p, reflected};
+      *scattered_ray = (ray){rec->p, reflected + (mat->fuzz * mat_rus(mat))};
       *attenuation = mat->albedo;
 
       return (dot(scattered_ray->dir, rec->normal) > 0);
+
+   //Dielectric
+   }else if (mat->type == 2){
+      *attenuation = (float3){1.0,1.0,1.0};
+      float refraction_ratio = rec->front_face ? (1.0f/mat->ir) : mat->ir;
+
+      float3 unit_direction = normalize(r_in->dir);
+
+
+      float cos_theta = fmin(dot(-unit_direction, rec->normal), 1.0f);
+      float sin_theta = sqrt(1.0f - cos_theta*cos_theta);
+
+      bool cannot_refract = refraction_ratio * sin_theta > 1.0f;
+      float3 direction;
+
+      const uint GLOBAL_ID = get_global_id(1)*get_global_size(0)+get_global_id(0);
+
+
+      if (cannot_refract || reflectance(cos_theta, refraction_ratio) > rand_float(mat->seed)){
+         direction = reflect(unit_direction, rec->normal);
+      }else{
+         direction = refract(unit_direction, rec->normal, refraction_ratio);
+      }
+
+
+      *scattered_ray = (ray){rec->p, direction};
+      return true;
    }
 }
 
@@ -250,6 +309,8 @@ __kernel void render(uint8 chunk_data,
    //if (GLOBAL_ID==0){printf("Last pass : %d!\n", pass_number);}
 
 
+
+
    //Unpack parameters data
    const int SPP          = parameters_data[0];
    const int RANDOM_COUNT = parameters_data[1];
@@ -283,49 +344,141 @@ __kernel void render(uint8 chunk_data,
    const uint CHUNK_PY = ((GROUP_Y * LOCAL_H) + LOCAL_Y); //relative to chunk
 
    //Setup materials
-   const int MAX_OBJECTS = 16;
-   material materials[16];
+   const int MAX_OBJECTS = 128;
+   material materials[128];
    for(int i=0;i<MAX_OBJECTS;i++){
       materials[i].albedo = (float3){0,0,0};
-      materials[i].fuzzy = 0.0;
+      materials[i].fuzz = 0.0;
       materials[i].type = 0;
       materials[i].rus = rus;
       materials[i].rus_count = RUS_COUNT;
       materials[i].seed = &seed;
    }
+
+
+
    materials[0].albedo = (float3){0.8,0.8,0.0};
    materials[0].type = 0;
-   materials[1].albedo = (float3){0.7,0.3,0.3};
-   materials[1].type = 0;
+   //materials[1].albedo = (float3){0.7,0.3,0.3};
+   //materials[1].type = 0;
+   materials[1].ir = 1.5;
+   materials[1].type = 2;
    materials[2].albedo = (float3){0.8,0.8,0.8};
    materials[2].type = 1;
+   materials[2].fuzz = 0.3;
    materials[3].albedo = (float3){0.8,0.6,0.2};
    materials[3].type = 1;
+   materials[3].fuzz = 1.0;
 
    //Setup world objects
-   hittable world[16];
+   hittable world[128];
    for(int i=0;i<MAX_OBJECTS;i++){
       world[i].center = (float3){100,100,100};
       world[i].radius = 0.0;
       world[i].type = 0;
       world[i].mat = 0;
    }
-   world[0].center = (float3){0,-100.5,-1};
-   world[0].radius = 100;
-   world[0].type = 0;
-   world[0].mat = &materials[0];
-   world[1].center = (float3){0,0,-1};
-   world[1].radius = 0.5;
-   world[1].type = 0;
-   world[1].mat = &materials[1];
-   world[2].center = (float3){-1,0,-1};
-   world[2].radius = 0.5;
-   world[2].type = 0;
-   world[2].mat = &materials[2];
-   world[3].center = (float3){1,0,-1};
-   world[3].radius = 0.5;
-   world[3].type = 0;
-   world[3].mat = &materials[3];
+   //world[0].center = (float3){0,-100.5,-1};
+   //world[0].radius = 100;
+   //world[0].type = 0;
+   //world[0].mat = &materials[0];
+
+   //world[1].center = (float3){0,0,-1};
+   //world[1].radius = 0.5;
+   //world[1].type = 0;
+   //world[1].mat = &materials[1];
+   //world[4].center = (float3){0,0,-1};
+   //world[4].radius = -0.45;
+   //world[4].type = 0;
+   //world[4].mat = &materials[1];
+
+
+   //world[2].center = (float3){-1,0,-1};
+   //world[2].radius = 0.5;
+   //world[2].type = 0;
+   //world[2].mat = &materials[2];
+   //world[3].center = (float3){1,0,-1};
+   //world[3].radius = 0.5;
+   //world[3].type = 0;
+   //world[3].mat = &materials[3];
+
+
+
+   int world_seed = 1;
+
+   int mat_ind = 0;
+   int obj_ind = 0;
+
+   materials[mat_ind].albedo  = (float3){0.5,0.5,0.5};
+   materials[mat_ind].type = 0;
+   world[obj_ind].center = (float3){0,-1000,0};
+   world[obj_ind].radius = 1000;
+   world[obj_ind].mat = &materials[mat_ind];
+   mat_ind++;
+   obj_ind++;
+
+
+
+   for(int a=-5; a<5; a++){
+      for(int b=-5; b<5; b++){
+         float rand_mat = rand_float(&world_seed);
+         float3 center = {a + 0.9f * rand_float(&world_seed), 0.2f, b + 0.9f * rand_float(&world_seed),};
+
+         world[obj_ind].center = center;
+         world[obj_ind].radius = 0.2f;
+
+         if (rand_mat < 0.8){
+            materials[mat_ind].albedo  = (float3){rand_float(&world_seed),rand_float(&world_seed),rand_float(&world_seed)};
+            materials[mat_ind].albedo *= (float3){rand_float(&world_seed),rand_float(&world_seed),rand_float(&world_seed)};
+            materials[mat_ind].type = 0;
+            world[obj_ind].mat = &materials[mat_ind];
+         }else if (rand_mat < 0.95){
+            materials[mat_ind].albedo = ((float3){rand_float(&world_seed),rand_float(&world_seed),rand_float(&world_seed)}*0.5f) + 0.5f;
+            materials[mat_ind].fuzz = rand_float(&world_seed)*0.5f;
+            materials[mat_ind].type = 1;
+            world[obj_ind].mat = &materials[mat_ind];
+         }else{
+            materials[mat_ind].ir = 1.5;
+            materials[mat_ind].type = 2;
+            world[obj_ind].mat = &materials[mat_ind];
+         }
+         mat_ind++;
+         obj_ind++;
+      }
+   }
+
+
+
+   materials[mat_ind].ir = 1.5;
+   materials[mat_ind].type = 2;
+   world[obj_ind].center = (float3){0,1,0};
+   world[obj_ind].radius = 1.0;
+   world[obj_ind].mat = &materials[mat_ind];
+   mat_ind++;
+   obj_ind++;
+
+
+   materials[mat_ind].albedo  = (float3){0.4,0.2,0.1};
+   materials[mat_ind].type = 0;
+   world[obj_ind].center = (float3){-4,1,0};
+   world[obj_ind].radius = 1.0;
+   world[obj_ind].mat = &materials[mat_ind];
+   mat_ind++;
+   obj_ind++;
+
+   materials[mat_ind].albedo = (float3){0.7,0.6,0.5};
+   materials[mat_ind].fuzz = 0.0;
+   materials[mat_ind].type = 1;
+   world[obj_ind].center = (float3){4,1,0};
+   world[obj_ind].radius = 1.0;
+   world[obj_ind].mat = &materials[mat_ind];
+   mat_ind++;
+   obj_ind++;
+
+
+
+
+
 
 
    //Final color
@@ -366,7 +519,7 @@ __kernel void render(uint8 chunk_data,
          const int ABSOLUTE_IND = (ABSOLUTE_Y * IMAGE_WIDTH) + ABSOLUTE_X;
          output[ABSOLUTE_IND] += (float4){rays[i+s][10], rays[i+s][11], rays[i+s][12], 1};
 
-      //If the ray is still active
+         //If the ray is still active
       }else{
          //Unpack the bounced ray into the ray pool for the next pass
          rays[i+s][0] = bounced_ray.orig[0];
