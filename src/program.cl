@@ -4,9 +4,11 @@
 
 typedef struct Inputs {
    __global float16* objects;
+   __global float16* wrapped_objects;
    __global float16* materials;
    __global float16* textures;
    uint objs_count;
+   uint wrapped_objs_count;
    uint mats_count;
    uint texs_count;
 
@@ -17,6 +19,9 @@ typedef struct Inputs {
    __global float3* perlin_ranvec;
    __global int3* perlin_perms;
    int perlin_point_count;
+
+   int GLOBAL_ID;
+   int ITERATION;
 } Inputs;
 
 float3 rus_to_rhemi(float3 rus, float3 normal);
@@ -67,6 +72,18 @@ float3 random_in_unit_vector(const Inputs* i){
 
 
 
+
+
+
+
+
+void print16(__constant char* s, float16 v);
+void print16(__constant char* s, float16 v){
+   printf("%s:\n", s);
+   for (int i=0;i<16;i++){
+      printf("  v[%d]: %f\n", i, v[i]);
+   }
+}
 
 
 
@@ -128,14 +145,29 @@ void set_face_normal(hit_record* rec, const ray* r, float3 outward_normal) {
 //} hittable;
 
 #define OBJK_TYPE 0
-#define OBJK_POS0 1
-#define OBJK_POS1 2
-#define OBJK_POS2 3
+#define OBJK_X0 1
+#define OBJK_Y0 2
+#define OBJK_Z0 3
+#define OBJK_X1 4
+#define OBJK_Y1 5
+#define OBJK_Z1 6
 #define OBJK_RAD  7
+#define OBJK_AXIS 7
 #define OBJK_MAT  8
+#define OBJK_RECT_K  9
+#define OBJK_DENSITY 9
+#define OBJK_ROTATION_ANGLE  9
+
+#define OBJK_OBJPTR1  10
+#define OBJK_OBJPTR2  11
+#define OBJK_OBJPTR3  12
+#define OBJK_OBJPTR4  13
+#define OBJK_OBJPTR5  14
+#define OBJK_OBJPTR6  15
+
 float length_squared(float3 v);
-bool hittable_hit(const __global float16* obj_ptr, const ray* r, double t_min, double t_max, hit_record* rec);
-bool worldHit(const Inputs* inputs, const ray* r, hit_record *rec);
+bool hittable_hit(const Inputs* inputs, const float16 obj, const ray* r, double t_min, double t_max, hit_record* rec);
+bool worldHit(const Inputs* inputs, const __global float16* objs, const int objs_count, const ray* r, hit_record *rec);
 
 float length_squared(float3 v){return v.x*v.x + v.y*v.y + v.z*v.z;}
 
@@ -143,9 +175,8 @@ float length_squared(float3 v){return v.x*v.x + v.y*v.y + v.z*v.z;}
 
 
 #define PI 3.14159265359
-void hittable_get_uv(const __global float16* obj_ptr, float3 p, float* u, float* v);
-void hittable_get_uv(const __global float16* obj_ptr, float3 p, float* u, float* v){
-   float16 obj = *obj_ptr;
+void hittable_get_uv(const float16 obj, float3 p, float* u, float* v);
+void hittable_get_uv(const float16 obj, float3 p, float* u, float* v){
    if(obj[OBJK_TYPE]==0){
 
       float theta = acos(-p[1]);
@@ -159,59 +190,254 @@ void hittable_get_uv(const __global float16* obj_ptr, float3 p, float* u, float*
 }
 
 
+#define XY 0
+#define YZ 1
+#define XZ 2
 
 
-bool hittable_hit(const __global float16* obj_ptr, const ray* r, double t_min, double t_max, hit_record* rec) {
-   float16 obj = *obj_ptr;
-   if (obj[OBJK_TYPE]==0){
-      float3 center = {obj[OBJK_POS0],obj[OBJK_POS1],obj[OBJK_POS2]};
-      float3 oc = r->orig - center;
-      float a = length_squared(r->dir);
-      float half_b = dot(oc, r->dir);
-      float c = length_squared(oc) - obj[OBJK_RAD]*obj[OBJK_RAD];
-      float discriminant = half_b*half_b - a*c;
-      if (discriminant < 0) {return false;}
+///Rotate a point in space, useful on hittable_rotate
+void rotatePoint(float3 original, const float sin_theta, const float cos_theta, const int axis, float3* output);
+void rotatePoint(float3 original, const float sin_theta, const float cos_theta, const int axis, float3* output){
+    if (axis == 0){
+        output->x =  cos_theta * original.x  -  sin_theta * original.y;
+        output->y =  sin_theta * original.x  +  cos_theta * original.y;
+    }else if (axis == 1){
+        output->x =  cos_theta * original.x  +  sin_theta * original.z;
+        output->z = -sin_theta * original.x  +  cos_theta * original.z;
+    }else{
+        output->y =  cos_theta * original.y  -  sin_theta * original.z;
+        output->z =  sin_theta * original.y  +  cos_theta * original.z;
+    }
+}
 
-      float sqrtd = sqrt(discriminant);
-      float root  = (-half_b - sqrtd) / a;
-      if (root < t_min || t_max < root) {
-         root = (-half_b + sqrtd) / a;
-         if (root < t_min || t_max < root){
-            return false;
+
+bool hittable_hit(const Inputs* inputs, const float16 obj_to_test, const ray* r, double t_min, double t_max, hit_record* rec) {
+
+   float16 objects[16];
+   int object_to_test = 1;
+   objects[0] = obj_to_test;
+   bool hit_anything = false;
+   float closestSoFar = t_max;
+
+   ray current_ray = *r;
+   float3 ray_offset = {0,0,0};
+
+   float rotation_sin_theta = 0;
+   float rotation_cos_theta = 1;
+   float rotation_axis = 0;
+
+   for(int i=0;i<object_to_test;i++){
+
+      float16 obj = objects[i];
+
+      //if (i>0){printf("Testing %f %d\n", obj[OBJK_TYPE], i);}
+
+      //Sphere
+      if (obj[OBJK_TYPE]==0){
+         float3 center = {obj[OBJK_X0],obj[OBJK_Y0],obj[OBJK_Z0]};
+         float3 oc = current_ray.orig - center;
+         float a = length_squared(current_ray.dir);
+         float half_b = dot(oc, current_ray.dir);
+         float c = length_squared(oc) - obj[OBJK_RAD]*obj[OBJK_RAD];
+         float discriminant = half_b*half_b - a*c;
+         if (discriminant < 0) {continue;}
+
+         float sqrtd = sqrt(discriminant);
+         float root  = (-half_b - sqrtd) / a;
+         if (root < t_min || closestSoFar < root) {
+            root = (-half_b + sqrtd) / a;
+            if (root < t_min || closestSoFar < root){continue;}
          }
+
+         rec->t = root;
+
+         rec->p = ray_at(&current_ray, rec->t);
+         rec->p += ray_offset;
+
+         float3 outward_normal = (rec->p - center) / obj[OBJK_RAD];
+         ray offsetted_ray = {current_ray.orig - ray_offset, current_ray.dir};
+         set_face_normal(rec, &offsetted_ray, outward_normal);
+
+         hittable_get_uv(obj, outward_normal, &rec->u, &rec->v);
+
+         rec->mat_ptr = (int)round(obj[OBJK_MAT]);
+
+         hit_anything = true;
+         closestSoFar = rec->t;
+
+      //Rect
+      }else if (obj[OBJK_TYPE] == 1){
+
+          //Check for plane ray intersection
+          float t;
+          if(obj[OBJK_AXIS] == XY){       t = (obj[OBJK_RECT_K] - current_ray.orig[2]) / current_ray.dir[2];
+          }else if(obj[OBJK_AXIS] == XZ){ t = (obj[OBJK_RECT_K] - current_ray.orig[1]) / current_ray.dir[1];
+          }else{                          t = (obj[OBJK_RECT_K] - current_ray.orig[0]) / current_ray.dir[0];}
+          if (t < t_min || t > closestSoFar){
+              continue;
+          }
+
+          //Find if the point of intersection is in the boundary
+          float x = current_ray.orig[0] + t * current_ray.dir[0]; float y = current_ray.orig[1] + t * current_ray.dir[1]; float z = current_ray.orig[2] + t * current_ray.dir[2];
+          if ((obj[OBJK_AXIS] == XZ && (x < obj[OBJK_X0] || x> obj[OBJK_X1] || z < obj[OBJK_Z0] || z > obj[OBJK_Z1]))
+              || (obj[OBJK_AXIS] == XY && (x < obj[OBJK_X0] || x> obj[OBJK_X1] || y < obj[OBJK_Y0] || y > obj[OBJK_Y1]))
+              || (obj[OBJK_AXIS] == YZ && (z < obj[OBJK_Z0] || z> obj[OBJK_Z1] || y < obj[OBJK_Y0] || y > obj[OBJK_Y1]))) {
+              continue;
+          }
+
+          //Register the hit
+          rec->t = t;
+          rec->p = ray_at(&current_ray, rec->t);
+          //Revert rotation on the normal
+          float3 p = rec->p;
+          float3 normal = rec->normal;
+          rotatePoint(rec->p, rotation_sin_theta, rotation_cos_theta, rotation_axis, &p);
+          rotatePoint(rec->normal, rotation_sin_theta, rotation_cos_theta, rotation_axis, &normal);
+          rec->p = p;
+          //Revert translation
+          rec->p += ray_offset;
+
+
+          float3 outward_normal = {obj[OBJK_AXIS]==YZ?1:0,obj[OBJK_AXIS]==XZ?1:0,obj[OBJK_AXIS]==XY?1:0};
+          ray offsetted_ray = {current_ray.orig - ray_offset, current_ray.dir};
+          set_face_normal(rec, &offsetted_ray, outward_normal);
+
+          rec->u = obj[OBJK_AXIS]==YZ ? (y - obj[OBJK_Y0])/(obj[OBJK_Y1] - obj[OBJK_Y0]) : (x - obj[OBJK_X0])/(obj[OBJK_X1] - obj[OBJK_X0]);
+          rec->v = obj[OBJK_AXIS]==XY ? (y - obj[OBJK_Y0])/(obj[OBJK_Y1] - obj[OBJK_Y0]) : (z - obj[OBJK_Z0])/(obj[OBJK_Z1] - obj[OBJK_Z0]);
+
+          rec->mat_ptr = (int)round(obj[OBJK_MAT]);
+
+          hit_anything = true;
+          closestSoFar = rec->t;
+
+
+          //Box
+      }else if (obj[OBJK_TYPE] == 2){
+
+
+         object_to_test += 6;
+         objects[i+1] = inputs->wrapped_objects[(int)round(obj[OBJK_OBJPTR1])];
+         objects[i+2] = inputs->wrapped_objects[(int)round(obj[OBJK_OBJPTR2])];
+         objects[i+3] = inputs->wrapped_objects[(int)round(obj[OBJK_OBJPTR3])];
+         objects[i+4] = inputs->wrapped_objects[(int)round(obj[OBJK_OBJPTR4])];
+         objects[i+5] = inputs->wrapped_objects[(int)round(obj[OBJK_OBJPTR5])];
+         objects[i+6] = inputs->wrapped_objects[(int)round(obj[OBJK_OBJPTR6])];
+
+      //Rotated
+      }else if (obj[OBJK_TYPE] == 3){
+
+          float angle = obj[OBJK_ROTATION_ANGLE] * PI/180.0f;
+          rotation_sin_theta = sin(angle);
+          rotation_cos_theta = cos(angle);
+          rotation_axis = (int)round(obj[OBJK_AXIS]);
+
+          //Rotate the incoming ray
+          float3 rot_origin = current_ray.orig;
+          float3 rot_direction = current_ray.dir;
+          rotatePoint(current_ray.orig, -rotation_sin_theta, rotation_cos_theta, rotation_axis, &rot_origin);
+          rotatePoint(current_ray.dir, -rotation_sin_theta, rotation_cos_theta, rotation_axis, &rot_direction);
+
+          //Test on the wrapped object
+          current_ray = (ray){rot_origin, rot_direction};
+          object_to_test += 1;
+          objects[i+1] = inputs->wrapped_objects[(int)round(obj[OBJK_OBJPTR1])];
+
+
+
+      //Translated
+      }else if (obj[OBJK_TYPE] == 4){
+
+          ray_offset = (float3){obj[OBJK_X0], obj[OBJK_Y0], obj[OBJK_Z0]};
+          current_ray = (ray){current_ray.orig - ray_offset, current_ray.dir};
+
+          object_to_test += 1;
+          objects[i+1] = inputs->wrapped_objects[(int)round(obj[OBJK_OBJPTR1])];
+
+      //Constant Medium
+      }else if (obj[OBJK_TYPE] == 5){
+
+          //if (inputs->GLOBAL_ID == (77*256)+190){print16("Obj", obj);}
+
+          //SUPPORT ONLY SPHERES
+          float neg_inv_density = obj[OBJK_DENSITY];
+
+          //Get the two intersection from the wrapped sphere
+          float3 center = {obj[OBJK_X0],obj[OBJK_Y0],obj[OBJK_Z0]};
+          float3 oc = current_ray.orig - center;
+          float a = length_squared(current_ray.dir);
+          float half_b = dot(oc, current_ray.dir);
+          float c = length_squared(oc) - obj[OBJK_RAD]*obj[OBJK_RAD];
+          float discriminant = half_b*half_b - a*c;
+
+          if (discriminant < 0) {
+              //if (inputs->GLOBAL_ID == (77*256)+190){printf("discriminant %f\n", discriminant);}
+              continue;
+          }
+          float sqrtd = sqrt(discriminant);
+          float root1 = (-half_b - sqrtd) / a;
+          float root2 = (-half_b + sqrtd) / a;
+
+          if (root1 < t_min || closestSoFar < root1 || root2 < t_min || closestSoFar < root2){
+              continue;
+          }
+
+
+
+
+          if (root1 < t_min) root1 = t_min;
+          if (root2 < t_max) root2 = t_max;
+
+          if (root1 >= root2){
+              //if (inputs->GLOBAL_ID == (77*256)+190){printf("roots %f %f\n", root1, root2);}
+              continue;
+          }
+
+          root1 = max(0.0f, root1);
+
+          const float ray_length = sqrt(length_squared(current_ray.dir));
+          const float distance_inside_sphere = (root2 - root1) * ray_length;
+          const float hit_distance = neg_inv_density * log(rand_float(inputs->seed));
+
+
+          if (hit_distance > distance_inside_sphere){
+              //if (inputs->GLOBAL_ID == (77*256)+190){printf("distances %f %f\n", hit_distance, distance_inside_sphere);}
+              continue;
+          }
+
+          rec->t = root1 + hit_distance / ray_length;
+          rec->p = ray_at(&current_ray, rec->t);
+          rec->normal = (float3){1,0,0};
+          rec->front_face = true;
+
+          rec->mat_ptr = (int)round(obj[OBJK_MAT]);
+
+          hit_anything = true;
+          closestSoFar = rec->t;
+
+          //if (inputs->GLOBAL_ID == (77*256)+190){printf("hit! %f %f %f\n", rec->t, rec->mat_ptr, 123.0f);}
+
       }
-
-      rec->t = root;
-      rec->p = ray_at(r, rec->t);
-      rec->normal = (rec->p -  center) / obj[OBJK_RAD];
-      float3 outward_normal = (rec->p - center) / obj[OBJK_RAD];
-      set_face_normal(rec, r, outward_normal);
-      hittable_get_uv(obj_ptr, outward_normal, &rec->u, &rec->v);
-      rec->mat_ptr = (int)round(obj[OBJK_MAT]);
-
-      return true;
-   }else{
-
-      //TODO
-      return false;
    }
+   return hit_anything;
 }
 
 
 
 
 
-bool worldHit(const Inputs* inputs, const ray* r, hit_record *rec) {
+bool worldHit(const Inputs* inputs, const __global float16* objs, const int objs_count, const ray* r, hit_record *rec) {
    hit_record temp_rec;
    bool hitAnything = false;
    float closestSoFar = FLT_MAX;
-   for (unsigned int i = 0; i < inputs->objs_count; i++) {
-      if (hittable_hit(&(inputs->objects[i]), r, 0.001, closestSoFar, &temp_rec)) {
+
+   for (int i = 0; i < objs_count; i++) {
+      if (hittable_hit(inputs, objs[i], r, 0.001, closestSoFar, &temp_rec)) {
          hitAnything = true;
          closestSoFar = temp_rec.t;
          *rec = temp_rec;
       }
    }
+
    return hitAnything;
 }
 
@@ -239,6 +465,8 @@ bool worldHit(const Inputs* inputs, const ray* r, hit_record *rec) {
 
 
 float noise(const Inputs* inp, float3 p);
+float turb(const Inputs* inp, float3 p, int depth);
+
 float noise(const Inputs* inp, float3 p) {
    float u = p[0] - floor(p[0]);
    float v = p[1] - floor(p[1]);
@@ -283,7 +511,7 @@ float noise(const Inputs* inp, float3 p) {
    return accum;
 }
 
-double turb(const Inputs* inp, float3 p, int depth) {
+float turb(const Inputs* inp, float3 p, int depth) {
    float accum = 0.0;
    float3 temp_p = p;
    float weight = 1.0;
@@ -334,11 +562,6 @@ float3 texture_value(const Inputs* inputs, const __global float16* tex_ptr, floa
 
 
 
-
-
-
-
-
 /**
  * Materials
  **/
@@ -365,6 +588,7 @@ float3 reflect(float3 v, float3 n);
 float3 refract(float3 uv, float3 n, float etai_over_etat);
 float reflectance(float cosine, float ref_idx) ;
 bool material_scatter(const Inputs* inputs, const int mat_ptr, const ray* r_in, const hit_record* rec, float3* attenuation, ray* scattered_ray) ;
+float3 material_emitted(const Inputs* inputs, const int mat_ptr, double u, double v, float3 p);
 
 
 bool near_zero(float3 v){
@@ -393,6 +617,20 @@ float reflectance(float cosine, float ref_idx) {
 
 
 
+float3 material_emitted(const Inputs* inputs, const int mat_ptr, double u, double v, float3 p){
+   float16 mat = inputs->materials[mat_ptr];
+   if (mat[MATK_TYPE] == 3){
+      float3 c = texture_value(inputs, &(inputs->textures[(int)round(mat[MATK_TEX_PTR])]), u, v, p);
+      //printf("Returning light texture %f %d\n", c[0], (int)round(mat[MATK_TEX_PTR]));
+      //print16("Light mat", mat);
+      return c;
+   }else{
+      return (float3){0,0,0};
+   }
+}
+
+
+
 
 bool material_scatter(const Inputs* inputs, const int mat_ptr, const ray* r_in, const hit_record* rec, float3* attenuation, ray* scattered_ray) {
    //Lambertian
@@ -415,7 +653,9 @@ bool material_scatter(const Inputs* inputs, const int mat_ptr, const ray* r_in, 
 
       float3 reflected = reflect(normalize(r_in->dir), rec->normal);
       *scattered_ray = (ray){rec->p, reflected + (mat[MATK_FUZZ] * random_in_unit_sphere(inputs))};
-      *attenuation = (float3){mat[MATK_ALB0], mat[MATK_ALB1], mat[MATK_ALB2]};
+
+      //*attenuation = (float3){mat[MATK_ALB0], mat[MATK_ALB1], mat[MATK_ALB2]};
+      *attenuation = texture_value(inputs, &(inputs->textures[(int)round(mat[MATK_TEX_PTR])]), rec->u, rec->v, rec->p);
 
       return (dot(scattered_ray->dir, rec->normal) > 0);
 
@@ -440,6 +680,19 @@ bool material_scatter(const Inputs* inputs, const int mat_ptr, const ray* r_in, 
 
       *scattered_ray = (ray){rec->p, direction};
       return true;
+   //Light
+   }else if (mat[MATK_TYPE] == 3){
+      return false;
+
+   //Isotropic
+   }else if (mat[MATK_TYPE] == 4){
+
+       //if (inputs->GLOBAL_ID == (77*256)+190){printf("isotropic!\n");}
+
+       *scattered_ray = (ray){rec->p, random_in_unit_sphere(inputs)};
+       *attenuation = texture_value(inputs, &(inputs->textures[(int)round(mat[MATK_TEX_PTR])]), rec->u, rec->v, rec->p);
+
+       return true;
    }
 
    return false;
@@ -477,26 +730,25 @@ float3 ray_color(const ray* r, ray* bounced_ray, const Inputs* inputs);
 float3 ray_color(const ray* r, ray* bounced_ray, const Inputs* inputs) {
    //Test hit on world
    hit_record rec;
-   if (worldHit(inputs, r, &rec)){
-      ray scattered;
-      float3 attenuation;
 
-      if (material_scatter(inputs, rec.mat_ptr, r, &rec, &attenuation, &scattered)){
-         //Fill bounced ray data
-         bounced_ray->orig = scattered.orig;
-         bounced_ray->dir  = scattered.dir;
-         //Return the attenuation color
-         return attenuation;
-      }
-
-      //Return the color
+   //Hit the background
+   if (!worldHit(inputs, inputs->objects, inputs->objs_count, r, &rec)){
       return (float3){0,0,0};
    }
 
-   //Background hit
-   float3 unit_direction = normalize(r->dir);
-   float t = 0.5f * (unit_direction[1] + 1.0);
-   return (1.0f-t) * (float3){1.0,1.0,1.0} + t * (float3){0.3, 0.7, 1.0};
+   ray scattered;
+   float3 attenuation;
+   float3 emitted = material_emitted(inputs, rec.mat_ptr, rec.u, rec.v, rec.p);
+
+   //Ray not scattered
+   if (!material_scatter(inputs, rec.mat_ptr, r, &rec, &attenuation, &scattered)){
+      return emitted;
+   }
+
+   //Fill bounced ray data
+   bounced_ray->orig = scattered.orig;
+   bounced_ray->dir  = scattered.dir;
+   return emitted + attenuation;
 }
 
 
@@ -512,6 +764,7 @@ __kernel void render(uint8 chunk_data,
 
                      uint4 world_data,
                      __global float16* objects,
+                     __global float16* wrapped_objects,
                      __global float16* materials,
                      __global float16* textures,
 
@@ -533,9 +786,10 @@ __kernel void render(uint8 chunk_data,
 
 
    //Unpack world data
-   const int OBJS_COUNT = world_data[0];
-   const int MATS_COUNT = world_data[1];
-   const int TEXS_COUNT = world_data[2];
+   const int OBJS_COUNT         = world_data[0];
+   const int WRAPPED_OBJS_COUNT = world_data[1];
+   const int MATS_COUNT         = world_data[2];
+   const int TEXS_COUNT         = world_data[3];
 
    //Unpack parameters data
    const int SPP                = parameters_data[0];
@@ -574,9 +828,11 @@ __kernel void render(uint8 chunk_data,
    //Pack the input struct
    Inputs inputs;
    inputs.objects = objects;
+   inputs.wrapped_objects = wrapped_objects;
    inputs.materials = materials;
    inputs.textures = textures;
    inputs.objs_count = OBJS_COUNT;
+   inputs.wrapped_objs_count = WRAPPED_OBJS_COUNT;
    inputs.mats_count = MATS_COUNT;
    inputs.texs_count = TEXS_COUNT;
    inputs.rus = rus;
@@ -586,6 +842,8 @@ __kernel void render(uint8 chunk_data,
    inputs.perlin_perms = perlin_perms;
    inputs.perlin_point_count = PERLIN_POINT_COUNT;
 
+   inputs.GLOBAL_ID = GLOBAL_ID;
+   inputs.ITERATION = ITERATION;
 
    //Final color
    const int i = (CHUNK_PY * CHUNK_W + CHUNK_PX)*SPP;

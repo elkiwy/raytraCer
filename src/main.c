@@ -251,24 +251,139 @@ void perlin_init(cl_int3* perm_xyz, cl_float3* ranvec){
 typedef enum{
     MAT_LAMBERTIAN = 0,
     MAT_METAL = 1,
-    MAT_DIELECTRIC = 2
+    MAT_DIELECTRIC = 2,
+    MAT_LIGHT = 3,
+    MAT_ISOTROPIC = 4
 } material_type;
 
 typedef enum{
-    OBJ_SPHERE = 0
+    OBJ_SPHERE = 0,
+    OBJ_RECT = 1,
+    OBJ_BOX = 2,
+    OBJ_ROTATED = 3,
+    OBJ_TRANSLATED = 4,
+    OBJ_CONSTANT_MEDIUM = 5
 } object_type;
 
-typedef enum{
-    TEX_SOLID = 0,
-    TEX_PERLIN = 1
-} texture_type;
+typedef enum{TEX_SOLID = 0, TEX_PERLIN = 1} texture_type;
 
 
-int setup_world(cl_float16* objs, cl_float16* mats, cl_float16* texs, unsigned int obj_count, unsigned int mat_count, unsigned int tex_count){
+typedef enum{AXIS_XY = 0, AXIS_YZ = 1, AXIS_XZ = 2} axis;
+typedef enum{AXIS_X = 0, AXIS_Y = 1, AXIS_Z = 2} rot_axis;
+
+
+int add_object(cl_float16 obj, cl_float16* arr, int* ind){
+    arr[*ind] = obj;
+    *ind = *ind + 1;
+    return *ind - 1;
+}
+
+
+
+cl_float16 make_sphere(float cx,float cy,float cz, float r, int mat_ind){
+    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
+    o.s[0] = OBJ_SPHERE;
+    o.s[1] = cx;
+    o.s[2] = cy;
+    o.s[3] = cz;
+    o.s[7] = r;
+    o.s[8] = mat_ind;
+    return o;
+}
+
+
+cl_float16 make_rect(float c00,float c01, float c10,float c11, float z, axis a, int mat_ind){
+    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
+    o.s[0] = OBJ_RECT;
+    int c00_pos, c01_pos, c10_pos, c11_pos;
+    if (a==AXIS_XY){c00_pos = 1; c01_pos = 2; c10_pos = 4; c11_pos = 5;
+    }else if (a==AXIS_YZ){c00_pos = 2; c01_pos = 3; c10_pos = 5; c11_pos = 6;
+    }else{c00_pos = 1; c01_pos = 3; c10_pos = 4; c11_pos = 6;}
+    o.s[c00_pos] = c00;
+    o.s[c01_pos] = c01;
+    o.s[c10_pos] = c10;
+    o.s[c11_pos] = c11;
+    o.s[9] = z;
+    o.s[7] = a;
+    o.s[8] = mat_ind;
+    return o;
+}
+
+
+
+cl_float16 make_box(cl_float16* wrapped_objs, int* wrapped_obj_ind, float c0x,float c0y, float c0z,float c1x, float c1y, float c1z, int mat_ind){
+    int ptr1 = add_object(make_rect(c0x,c0y, c1x,c1y, c1z, AXIS_XY, mat_ind), wrapped_objs, wrapped_obj_ind);
+    int ptr2 = add_object(make_rect(c0x,c0y, c1x,c1y, c0z, AXIS_XY, mat_ind), wrapped_objs, wrapped_obj_ind);
+    int ptr3 = add_object(make_rect(c0x,c0z, c1x,c1z, c1y, AXIS_XZ, mat_ind), wrapped_objs, wrapped_obj_ind);
+    int ptr4 = add_object(make_rect(c0x,c0z, c1x,c1z, c0y, AXIS_XZ, mat_ind), wrapped_objs, wrapped_obj_ind);
+    int ptr5 = add_object(make_rect(c0y,c0z, c1y,c1z, c1x, AXIS_YZ, mat_ind), wrapped_objs, wrapped_obj_ind);
+    int ptr6 = add_object(make_rect(c0y,c0z, c1y,c1z, c0x, AXIS_YZ, mat_ind), wrapped_objs, wrapped_obj_ind);
+
+    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
+    o.s[0] = OBJ_BOX;
+    o.s[1] = c0x;
+    o.s[2] = c0y;
+    o.s[3] = c0z;
+    o.s[4] = c1x;
+    o.s[5] = c1y;
+    o.s[6] = c1z;
+    o.s[8] = mat_ind;
+
+    o.s[10] = ptr1;
+    o.s[11] = ptr2;
+    o.s[12] = ptr3;
+    o.s[13] = ptr4;
+    o.s[14] = ptr5;
+    o.s[15] = ptr6;
+
+    return o;
+}
+
+
+cl_float16 make_rotated(cl_float16* wrapped_objs, int* wrapped_obj_ind, cl_float16 obj, rot_axis ax, float angle){
+    int ptr = add_object(obj, wrapped_objs, wrapped_obj_ind);
+    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
+    o.s[0] = OBJ_ROTATED;
+    o.s[7] = ax;
+    o.s[9] = angle;
+    o.s[10] = ptr;
+    return o;
+}
+
+cl_float16 make_translated(cl_float16* wrapped_objs, int* wrapped_obj_ind, cl_float16 obj, float ox, float oy, float oz){
+    int ptr = add_object(obj, wrapped_objs, wrapped_obj_ind);
+    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
+    o.s[0] = OBJ_TRANSLATED;
+    o.s[1] = ox;
+    o.s[2] = oy;
+    o.s[3] = oz;
+    o.s[10] = ptr;
+    return o;
+}
+
+cl_float16 make_constant_medium_sphere(float cx, float cy, float cz, float r, float density, int mat_ind){
+    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
+    o.s[0] = OBJ_CONSTANT_MEDIUM;
+    o.s[1] = cx;
+    o.s[2] = cy;
+    o.s[3] = cz;
+    o.s[7] = r;
+    o.s[8] = mat_ind;
+    o.s[9] = -1.0f/density;
+    return o;
+}
+
+
+int setup_world(cl_float16* objs, cl_float16* wrapped_objs, cl_float16* mats, cl_float16* texs,
+                unsigned int obj_count, unsigned int wrapped_obj_count, unsigned int mat_count, unsigned int tex_count){
+
     //Make sure we use clean data
     for(unsigned int i=0;i<obj_count;i++){objs[i] = (cl_float16){{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};}
     for(unsigned int i=0;i<mat_count;i++){mats[i] = (cl_float16){{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};}
     for(unsigned int i=0;i<tex_count;i++){texs[i] = (cl_float16){{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};}
+    for(unsigned int i=0;i<wrapped_obj_count;i++){wrapped_objs[i] = (cl_float16){{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};}
+
+
 
     /* Materials:
     **  0 -> type_flag
@@ -282,132 +397,119 @@ int setup_world(cl_float16* objs, cl_float16* mats, cl_float16* texs, unsigned i
     **  0 -> type_flag
     **  1,2,3 -> point1
     **  4,5,6 -> point2
-    **  7 -> radius
+    **  7 -> radius / axis
     **  8 -> material_index
+    **  9 -> rect_k / rotation_angle / density
+    **
+    **  10 -> obj_ptr1
+    **  11 -> obj_ptr2
+    **  12 -> obj_ptr3
+    **  13 -> obj_ptr4
+    **  14 -> obj_ptr5
+    **  15 -> obj_ptr6
     **/
 
-    /* Objects:
+    /* Texture:
     **  0 -> type_flag
     **  1,2,3 -> color
     **  4 -> scale
     **/
 
+    int wrapped_obj_ind = 0;
     int obj_ind = 0;
     int mat_ind = 0;
     int tex_ind = 0;
 
     texs[tex_ind].s[0] = TEX_SOLID;
-    texs[tex_ind].s[1] = 0.25;
-    texs[tex_ind].s[2] = 0.25;
-    texs[tex_ind].s[3] = 0.25;
-
+    texs[tex_ind].s[1] = 0.65;
+    texs[tex_ind].s[2] = 0.05;
+    texs[tex_ind].s[3] = 0.05;
     mats[mat_ind].s[0] = MAT_LAMBERTIAN;
     mats[mat_ind].s[6] = tex_ind;
+    int mat_red = mat_ind;
+    mat_ind++; tex_ind++;
 
-    objs[obj_ind].s[1] = 0;
-    objs[obj_ind].s[2] = -1000;
-    objs[obj_ind].s[3] = 0;
-    objs[obj_ind].s[7] = 1000;
-    objs[obj_ind].s[8] = mat_ind;
-    mat_ind++;
-    obj_ind++;
-    tex_ind++;
-
-    /*/
-    //Create materials
-    for(int a=-5; a<5; a++){
-        for(int b=-5; b<5; b++){
-            //Type
-            objs[obj_ind].s[0] = OBJ_SPHERE;
-
-            //Center
-            objs[obj_ind].s[1] = a + 0.9f * random_double_unit();
-            objs[obj_ind].s[2] = 0.2f;
-            objs[obj_ind].s[3] = b + 0.9f * random_double_unit();
-
-            //Radius
-            objs[obj_ind].s[7] = 0.2f;
-
-            double rand_mat = random_double_unit();
-            if (rand_mat < 0.8){
-                mats[mat_ind].s[0] = MAT_LAMBERTIAN;
-                mats[mat_ind].s[1] = random_double_unit() * random_double_unit();
-                mats[mat_ind].s[2] = random_double_unit() * random_double_unit();
-                mats[mat_ind].s[3] = random_double_unit() * random_double_unit();
-                objs[obj_ind].s[8] = mat_ind;
-            }else if (rand_mat < 0.95){
-                mats[mat_ind].s[0] = MAT_METAL;
-                mats[mat_ind].s[1] = (random_double_unit()*0.5f)+0.5f;
-                mats[mat_ind].s[2] = (random_double_unit()*0.5f)+0.5f;
-                mats[mat_ind].s[3] = (random_double_unit()*0.5f)+0.5f;
-                mats[mat_ind].s[4] = random_double_unit()*0.5f;
-                objs[obj_ind].s[8] = mat_ind;
-            }else{
-                mats[mat_ind].s[0] = MAT_DIELECTRIC;
-                mats[mat_ind].s[5] = 1.5;
-                objs[obj_ind].s[8] = mat_ind;
-            }
-            mat_ind++;
-            obj_ind++;
-        }
-    }
-
-
-
-    mats[mat_ind].s[5] = 1.5;
-    mats[mat_ind].s[0] = MAT_DIELECTRIC;
-    objs[obj_ind].s[1] = 0;
-    objs[obj_ind].s[2] = 1;
-    objs[obj_ind].s[3] = 0;
-    objs[obj_ind].s[7] = 1.0;
-    objs[obj_ind].s[8] = mat_ind;
-    mat_ind++;
-    obj_ind++;
-
-
-    mats[mat_ind].s[1] = 0.4;
-    mats[mat_ind].s[2] = 0.2;
-    mats[mat_ind].s[3] = 0.1;
-    mats[mat_ind].s[0] = MAT_LAMBERTIAN;
-    objs[obj_ind].s[1] = -4;
-    objs[obj_ind].s[2] = 1;
-    objs[obj_ind].s[3] = 0;
-    objs[obj_ind].s[7] = 1.0;
-    objs[obj_ind].s[8] = mat_ind;
-    mat_ind++;
-    obj_ind++;
-
-    mats[mat_ind].s[1] = 0.7;
-    mats[mat_ind].s[2] = 0.6;
-    mats[mat_ind].s[3] = 0.5;
-    mats[mat_ind].s[4] = 0.1;
-    mats[mat_ind].s[0] = MAT_METAL;
-    objs[obj_ind].s[1] = 3;
-    objs[obj_ind].s[2] = 1;
-    objs[obj_ind].s[3] = 0;
-    objs[obj_ind].s[7] = 1.0;
-    objs[obj_ind].s[8] = mat_ind;
-    mat_ind++;
-    obj_ind++;
-
-    /*/
-
-    texs[tex_ind].s[0] = TEX_PERLIN;
-    texs[tex_ind].s[4] = 10.0;
-
+    texs[tex_ind].s[0] = TEX_SOLID;
+    texs[tex_ind].s[1] = 0.73;
+    texs[tex_ind].s[2] = 0.73;
+    texs[tex_ind].s[3] = 0.73;
     mats[mat_ind].s[0] = MAT_LAMBERTIAN;
     mats[mat_ind].s[6] = tex_ind;
+    int mat_white = mat_ind;
+    mat_ind++; tex_ind++;
 
-    objs[obj_ind].s[1] = 3;
-    objs[obj_ind].s[2] = 1;
-    objs[obj_ind].s[3] = 0;
-    objs[obj_ind].s[7] = 1.0;
-    objs[obj_ind].s[8] = mat_ind;
-    mat_ind++;
-    obj_ind++;
-    tex_ind++;
+    texs[tex_ind].s[0] = TEX_SOLID;
+    texs[tex_ind].s[1] = 0.12;
+    texs[tex_ind].s[2] = 0.45;
+    texs[tex_ind].s[3] = 0.15;
+    mats[mat_ind].s[0] = MAT_LAMBERTIAN;
+    mats[mat_ind].s[6] = tex_ind;
+    int mat_green = mat_ind;
+    mat_ind++; tex_ind++;
+
+    texs[tex_ind].s[0] = TEX_SOLID;
+    texs[tex_ind].s[1] = 5;
+    texs[tex_ind].s[2] = 5;
+    texs[tex_ind].s[3] = 5;
+    mats[mat_ind].s[0] = MAT_LIGHT;
+    mats[mat_ind].s[6] = tex_ind;
+    int mat_light = mat_ind;
+    mat_ind++;tex_ind++;
+
+
+    texs[tex_ind].s[0] = TEX_SOLID;
+    texs[tex_ind].s[1] = 1.0;
+    texs[tex_ind].s[2] = 1.0;
+    texs[tex_ind].s[3] = 1.0;
+    mats[mat_ind].s[0] = MAT_ISOTROPIC;
+    mats[mat_ind].s[6] = tex_ind;
+    int mat_isotropic = mat_ind;
+    mat_ind++; tex_ind++;
+
+    add_object(make_rect(0,0, 555,555, 555, AXIS_YZ, mat_green), objs, &obj_ind);
+    add_object(make_rect(0,0, 555,555,   0, AXIS_YZ, mat_red), objs, &obj_ind);
+    add_object(make_rect(113,127, 443,432, 554, AXIS_XZ, mat_light), objs, &obj_ind);
+    add_object(make_rect(0,0, 555,555,   0, AXIS_XZ, mat_white), objs, &obj_ind);
+    add_object(make_rect(0,0, 555,555, 555, AXIS_XZ, mat_white), objs, &obj_ind);
+    add_object(make_rect(0,0, 555,555, 555, AXIS_XY, mat_white), objs, &obj_ind);
+
+
+    //add_object(make_box(wrapped_objs, &wrapped_obj_ind, 130,0,65,  295,165,230, mat_white), objs, &obj_ind);
+    //add_object(make_box(wrapped_objs, &wrapped_obj_ind, 265,0,295, 430,330,460, mat_red), objs, &obj_ind);
+    //add_object(make_box(wrapped_objs, &wrapped_obj_ind, 0,0,0, 165,330,165, mat_red), objs, &obj_ind);
+
+
+
+    //cl_float16 box1 = make_box(wrapped_objs, &wrapped_obj_ind, 130,0,65,  295,165,230, mat_red);
+    //box1 = make_translated(wrapped_objs, &wrapped_obj_ind, box1, 100,0,100);
+    //add_object(box1, objs, &obj_ind);
+
+    //cl_float16 box1 = make_box(wrapped_objs, &wrapped_obj_ind, 0,0,0,  165,330,165, mat_red);
+    //box1 = make_rotated(wrapped_objs, &wrapped_obj_ind, box1, AXIS_Y, 30);
+    //box1 = make_translated(wrapped_objs, &wrapped_obj_ind, box1, 265,0,295);
+    //add_object(box1, objs, &obj_ind);
+
+
+
+    cl_float16 box1 = make_box(wrapped_objs, &wrapped_obj_ind, 0,0,0,  165,330,165, mat_white);
+    box1 = make_rotated(wrapped_objs, &wrapped_obj_ind, box1, AXIS_Y, 15);
+    box1 = make_translated(wrapped_objs, &wrapped_obj_ind, box1, 265,0,295);
+    add_object(box1, objs, &obj_ind);
+
+    /*/
+    cl_float16 box2 = make_box(wrapped_objs, &wrapped_obj_ind, 0,0,0,  165,165,165, mat_white);
+    box2 = make_rotated(wrapped_objs, &wrapped_obj_ind, box2, AXIS_Y, -18);
+    box2 = make_translated(wrapped_objs, &wrapped_obj_ind, box2, 130,0,65);
+    add_object(box2, objs, &obj_ind);
+    /*/
+    cl_float16 s1 = make_constant_medium_sphere(130, 150, 65, 100, 0.001, mat_isotropic);
+    add_object(s1, objs, &obj_ind);
     /**/
 
+    //shared_ptr<hittable> box2 = make_shared<box>(point3(0,0,0), point3(165,165,165), white);
+    //box2 = make_shared<rotate_y>(box2, -18);
+    //box2 = make_shared<translate>(box2, vec3(130,0,65));
+    //objects.add(box2);
     return 1;
 }
 
@@ -419,7 +521,7 @@ int setup_world(cl_float16* objs, cl_float16* mats, cl_float16* texs, unsigned i
 const unsigned long IMAGE_WIDTH  = 256*2;
 const unsigned long IMAGE_HEIGHT = 256*2;
 
-const int CHUNKS_SQRT = 1;
+const int CHUNKS_SQRT = 2;
 const unsigned long CHUNKS_WIDTH  = IMAGE_WIDTH / CHUNKS_SQRT;
 const unsigned long CHUNKS_HEIGHT = IMAGE_HEIGHT / CHUNKS_SQRT;
 
@@ -483,18 +585,25 @@ int main() {
     //World setup
     const int OBJS_COUNT = 128;
     cl_float16 objs[OBJS_COUNT];
+    const int WRAPPED_OBJS_COUNT = 128;
+    cl_float16 wrapped_objs[OBJS_COUNT];
     const int MATS_COUNT = 128;
     cl_float16 mats[MATS_COUNT];
     const int TEXS_COUNT = 128;
     cl_float16 texs[TEXS_COUNT];
-    err = setup_world(&objs[0], &mats[0], &texs[0], OBJS_COUNT, MATS_COUNT, TEXS_COUNT);
-    cl_uint4 world_data = {{OBJS_COUNT, MATS_COUNT, TEXS_COUNT}};
+    err = setup_world(&objs[0], &wrapped_objs[0], &mats[0], &texs[0], OBJS_COUNT, WRAPPED_OBJS_COUNT, MATS_COUNT, TEXS_COUNT);
+    cl_uint4 world_data = {{OBJS_COUNT, WRAPPED_OBJS_COUNT, MATS_COUNT, TEXS_COUNT}};
     err = clSetKernelArg(kernel, argc, sizeof(cl_uint4), &world_data);
     argc++;
 
     //Objects
     cl_mem objects_buffer = clCreateBuffer(context, F_R_C, OBJS_COUNT * sizeof(cl_float16), objs, &err);
     err = clSetKernelArg(kernel, argc, sizeof(cl_mem), &objects_buffer);
+    argc++;
+
+    //wrapped Objects
+    cl_mem wrapped_objects_buffer = clCreateBuffer(context, F_R_C, WRAPPED_OBJS_COUNT * sizeof(cl_float16), wrapped_objs, &err);
+    err = clSetKernelArg(kernel, argc, sizeof(cl_mem), &wrapped_objects_buffer);
     argc++;
 
     //Materials
@@ -511,12 +620,14 @@ int main() {
 
 
     //Ray Pools = {0,1,2 -> Origin; 3,4,5 -> Direction; 6 -> Used flag; 7 -> ??}
-    cl_float3 from = {{13, 2, 3}};
-    cl_float3   to = {{ 0, 0, 0}};
+    cl_float3 from = {{278, 278, -800}};
+    cl_float3   to = {{278, 278, 0}};
     cl_float3  vup = {{ 0, 1, 0}};
     float dist_to_focus = 10.0;
     float aperture = 0.1;
-    camera cam; init_camera(&cam, from, to, vup, 20.0, 1.0, aperture, dist_to_focus);
+    float vfov = 40.0;
+    camera cam; init_camera(&cam, from, to, vup, vfov, 1.0, aperture, dist_to_focus);
+
     const unsigned long RAY_POOL_SIZE = (CHUNKS_WIDTH * CHUNKS_HEIGHT) * SPP;
     printf("Creating ray_pool of size %luk\n", RAY_POOL_SIZE/1000);fflush(stdout);
     cl_float16* ray_pool = malloc(sizeof(cl_float16)*RAY_POOL_SIZE);
@@ -620,7 +731,7 @@ int main() {
                 err = clEnqueueNDRangeKernel(queue, kernel, 2, NULL, global_size, local_size, 0, NULL, NULL);
                 //Synchronize en
                 err = clEnqueueReadBuffer(queue, output_buffer, CL_TRUE, 0, sizeof(output), output, 0, NULL, NULL);
-                //printf("Chunk %d %d pass %d done.\n", chunk_x, chunk_y, iteration_data.s[0]);
+                printf("Chunk %d %d pass %d done.\n", chunk_x, chunk_y, iteration_data.s[0]);
             }
             printf("Chunk %d %d processed, now writing...\n", chunk_x, chunk_y);
 
@@ -679,12 +790,15 @@ int main() {
     clReleaseMemObject(perlin_perm_buffer);
 
     clReleaseMemObject(objects_buffer);
+    clReleaseMemObject(wrapped_objects_buffer);
     clReleaseMemObject(materials_buffer);
     clReleaseMemObject(textures_buffer);
     clReleaseMemObject(output_buffer);
     clReleaseMemObject(ray_pool_buffer);
+
     clReleaseMemObject(random_seeds_buffer);
     clReleaseMemObject(rus_buffer);
+
     clReleaseCommandQueue(queue);
     clReleaseProgram(program);
     clReleaseContext(context);
