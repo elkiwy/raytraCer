@@ -448,9 +448,9 @@ int setup_world(cl_float16* objs, cl_float16* wrapped_objs, cl_float16* mats, cl
     mat_ind++; tex_ind++;
 
     texs[tex_ind].s[0] = TEX_SOLID;
-    texs[tex_ind].s[1] = 5;
-    texs[tex_ind].s[2] = 5;
-    texs[tex_ind].s[3] = 5;
+    texs[tex_ind].s[1] = 7;
+    texs[tex_ind].s[2] = 7;
+    texs[tex_ind].s[3] = 7;
     mats[mat_ind].s[0] = MAT_LIGHT;
     mats[mat_ind].s[6] = tex_ind;
     int mat_light = mat_ind;
@@ -624,7 +624,7 @@ int main() {
     cl_float3   to = {{278, 278, 0}};
     cl_float3  vup = {{ 0, 1, 0}};
     float dist_to_focus = 10.0;
-    float aperture = 0.1;
+    float aperture = 0.0;
     float vfov = 40.0;
     camera cam; init_camera(&cam, from, to, vup, vfov, 1.0, aperture, dist_to_focus);
 
@@ -756,9 +756,9 @@ int main() {
                 float b = output[i].s[2]/samples_for_iteration;
 
                 //Gamma correction
-                r = sqrt(r);
-                g = sqrt(g);
-                b = sqrt(b);
+                r = fmax(fmin(sqrt(r), 0.99), 0.0);
+                g = fmax(fmin(sqrt(g), 0.99), 0.0);
+                b = fmax(fmin(sqrt(b), 0.99), 0.0);
                 if (i==0){printf("%d final values : %f %f %f \n", i, r, g, b);}
 
                 //Write to pixel buffer
