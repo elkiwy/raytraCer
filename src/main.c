@@ -262,7 +262,8 @@ typedef enum{
     OBJ_BOX = 2,
     OBJ_ROTATED = 3,
     OBJ_TRANSLATED = 4,
-    OBJ_CONSTANT_MEDIUM = 5
+    OBJ_CONSTANT_MEDIUM = 5,
+    OBJ_FLIP_FACE = 6
 } object_type;
 
 typedef enum{TEX_SOLID = 0, TEX_PERLIN = 1} texture_type;
@@ -361,6 +362,14 @@ cl_float16 make_translated(cl_float16* wrapped_objs, int* wrapped_obj_ind, cl_fl
     return o;
 }
 
+cl_float16 make_flip_face(cl_float16* wrapped_objs, int* wrapped_obj_ind, cl_float16 obj){
+    int ptr = add_object(obj, wrapped_objs, wrapped_obj_ind);
+    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
+    o.s[0] = OBJ_FLIP_FACE;
+    o.s[10] = ptr;
+    return o;
+}
+
 cl_float16 make_constant_medium_sphere(float cx, float cy, float cz, float r, float density, int mat_ind){
     cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
     o.s[0] = OBJ_CONSTANT_MEDIUM;
@@ -374,13 +383,14 @@ cl_float16 make_constant_medium_sphere(float cx, float cy, float cz, float r, fl
 }
 
 
-int setup_world(cl_float16* objs, cl_float16* wrapped_objs, cl_float16* mats, cl_float16* texs,
-                unsigned int obj_count, unsigned int wrapped_obj_count, unsigned int mat_count, unsigned int tex_count){
+int setup_world(cl_float16* objs, cl_float16* wrapped_objs, cl_float16* lights,  cl_float16* mats, cl_float16* texs,
+                unsigned int obj_count, unsigned int wrapped_obj_count, unsigned int lights_count, unsigned int mat_count, unsigned int tex_count){
 
     //Make sure we use clean data
     for(unsigned int i=0;i<obj_count;i++){objs[i] = (cl_float16){{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};}
     for(unsigned int i=0;i<mat_count;i++){mats[i] = (cl_float16){{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};}
     for(unsigned int i=0;i<tex_count;i++){texs[i] = (cl_float16){{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};}
+    for(unsigned int i=0;i<lights_count;i++){lights[i] = (cl_float16){{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};}
     for(unsigned int i=0;i<wrapped_obj_count;i++){wrapped_objs[i] = (cl_float16){{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};}
 
 
@@ -393,7 +403,7 @@ int setup_world(cl_float16* objs, cl_float16* wrapped_objs, cl_float16* mats, cl
     **  6 -> texture_index
     **/
 
-    /* Objects:
+    /* Objects / Lights:
     **  0 -> type_flag
     **  1,2,3 -> point1
     **  4,5,6 -> point2
@@ -417,6 +427,7 @@ int setup_world(cl_float16* objs, cl_float16* wrapped_objs, cl_float16* mats, cl
 
     int wrapped_obj_ind = 0;
     int obj_ind = 0;
+    int light_ind = 0;
     int mat_ind = 0;
     int tex_ind = 0;
 
@@ -448,9 +459,9 @@ int setup_world(cl_float16* objs, cl_float16* wrapped_objs, cl_float16* mats, cl
     mat_ind++; tex_ind++;
 
     texs[tex_ind].s[0] = TEX_SOLID;
-    texs[tex_ind].s[1] = 7;
-    texs[tex_ind].s[2] = 7;
-    texs[tex_ind].s[3] = 7;
+    texs[tex_ind].s[1] = 15;
+    texs[tex_ind].s[2] = 15;
+    texs[tex_ind].s[3] = 15;
     mats[mat_ind].s[0] = MAT_LIGHT;
     mats[mat_ind].s[6] = tex_ind;
     int mat_light = mat_ind;
@@ -466,9 +477,15 @@ int setup_world(cl_float16* objs, cl_float16* wrapped_objs, cl_float16* mats, cl
     int mat_isotropic = mat_ind;
     mat_ind++; tex_ind++;
 
+
     add_object(make_rect(0,0, 555,555, 555, AXIS_YZ, mat_green), objs, &obj_ind);
     add_object(make_rect(0,0, 555,555,   0, AXIS_YZ, mat_red), objs, &obj_ind);
-    add_object(make_rect(113,127, 443,432, 554, AXIS_XZ, mat_light), objs, &obj_ind);
+
+    cl_float16 light = make_rect(213,227, 343,332, 554, AXIS_XZ, mat_light);
+    add_object(light, lights, &light_ind);
+    light = make_flip_face(wrapped_objs, &wrapped_obj_ind, light);
+    add_object(light, objs, &obj_ind);
+
     add_object(make_rect(0,0, 555,555,   0, AXIS_XZ, mat_white), objs, &obj_ind);
     add_object(make_rect(0,0, 555,555, 555, AXIS_XZ, mat_white), objs, &obj_ind);
     add_object(make_rect(0,0, 555,555, 555, AXIS_XY, mat_white), objs, &obj_ind);
@@ -496,7 +513,7 @@ int setup_world(cl_float16* objs, cl_float16* wrapped_objs, cl_float16* mats, cl
     box1 = make_translated(wrapped_objs, &wrapped_obj_ind, box1, 265,0,295);
     add_object(box1, objs, &obj_ind);
 
-    /*/
+    /**/
     cl_float16 box2 = make_box(wrapped_objs, &wrapped_obj_ind, 0,0,0,  165,165,165, mat_white);
     box2 = make_rotated(wrapped_objs, &wrapped_obj_ind, box2, AXIS_Y, -18);
     box2 = make_translated(wrapped_objs, &wrapped_obj_ind, box2, 130,0,65);
@@ -587,13 +604,15 @@ int main() {
     cl_float16 objs[OBJS_COUNT];
     const int WRAPPED_OBJS_COUNT = 128;
     cl_float16 wrapped_objs[OBJS_COUNT];
+    const int LIGHTS_COUNT = 128;
+    cl_float16 lights[LIGHTS_COUNT];
     const int MATS_COUNT = 128;
     cl_float16 mats[MATS_COUNT];
     const int TEXS_COUNT = 128;
     cl_float16 texs[TEXS_COUNT];
-    err = setup_world(&objs[0], &wrapped_objs[0], &mats[0], &texs[0], OBJS_COUNT, WRAPPED_OBJS_COUNT, MATS_COUNT, TEXS_COUNT);
-    cl_uint4 world_data = {{OBJS_COUNT, WRAPPED_OBJS_COUNT, MATS_COUNT, TEXS_COUNT}};
-    err = clSetKernelArg(kernel, argc, sizeof(cl_uint4), &world_data);
+    err = setup_world(&objs[0], &wrapped_objs[0], &lights[0], &mats[0], &texs[0], OBJS_COUNT, WRAPPED_OBJS_COUNT, LIGHTS_COUNT, MATS_COUNT, TEXS_COUNT);
+    cl_uint8 world_data = {{OBJS_COUNT, WRAPPED_OBJS_COUNT, LIGHTS_COUNT, MATS_COUNT, TEXS_COUNT}};
+    err = clSetKernelArg(kernel, argc, sizeof(cl_uint8), &world_data);
     argc++;
 
     //Objects
@@ -604,6 +623,11 @@ int main() {
     //wrapped Objects
     cl_mem wrapped_objects_buffer = clCreateBuffer(context, F_R_C, WRAPPED_OBJS_COUNT * sizeof(cl_float16), wrapped_objs, &err);
     err = clSetKernelArg(kernel, argc, sizeof(cl_mem), &wrapped_objects_buffer);
+    argc++;
+
+    //Lights
+    cl_mem lights_buffer = clCreateBuffer(context, F_R_C, LIGHTS_COUNT * sizeof(cl_float16), lights, &err);
+    err = clSetKernelArg(kernel, argc, sizeof(cl_mem), &lights_buffer);
     argc++;
 
     //Materials
