@@ -384,7 +384,9 @@ cl_float16 make_constant_medium_sphere(float cx, float cy, float cz, float r, fl
 
 
 int setup_world(cl_float16* objs, cl_float16* wrapped_objs, cl_float16* lights,  cl_float16* mats, cl_float16* texs,
-                unsigned int obj_count, unsigned int wrapped_obj_count, unsigned int lights_count, unsigned int mat_count, unsigned int tex_count){
+                unsigned int obj_count, unsigned int wrapped_obj_count, unsigned int lights_count, unsigned int mat_count, unsigned int tex_count,
+                int* allocated_objects,
+                int* allocated_lights){
 
     //Make sure we use clean data
     for(unsigned int i=0;i<obj_count;i++){objs[i] = (cl_float16){{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};}
@@ -477,6 +479,21 @@ int setup_world(cl_float16* objs, cl_float16* wrapped_objs, cl_float16* lights, 
     int mat_isotropic = mat_ind;
     mat_ind++; tex_ind++;
 
+    mats[mat_ind].s[0] = MAT_DIELECTRIC;
+    mats[mat_ind].s[5] = 1.5;
+    int mat_glass = mat_ind;
+    mat_ind++; tex_ind++;
+
+
+    texs[tex_ind].s[0] = TEX_SOLID;
+    texs[tex_ind].s[1] = 0.8;
+    texs[tex_ind].s[2] = 0.85;
+    texs[tex_ind].s[3] = 0.88;
+    mats[mat_ind].s[0] = MAT_METAL;
+    mats[mat_ind].s[4] = 0;
+    mats[mat_ind].s[6] = tex_ind;
+    int mat_metal = mat_ind;
+    mat_ind++; tex_ind++;
 
     add_object(make_rect(0,0, 555,555, 555, AXIS_YZ, mat_green), objs, &obj_ind);
     add_object(make_rect(0,0, 555,555,   0, AXIS_YZ, mat_red), objs, &obj_ind);
@@ -491,42 +508,28 @@ int setup_world(cl_float16* objs, cl_float16* wrapped_objs, cl_float16* lights, 
     add_object(make_rect(0,0, 555,555, 555, AXIS_XY, mat_white), objs, &obj_ind);
 
 
-    //add_object(make_box(wrapped_objs, &wrapped_obj_ind, 130,0,65,  295,165,230, mat_white), objs, &obj_ind);
-    //add_object(make_box(wrapped_objs, &wrapped_obj_ind, 265,0,295, 430,330,460, mat_red), objs, &obj_ind);
-    //add_object(make_box(wrapped_objs, &wrapped_obj_ind, 0,0,0, 165,330,165, mat_red), objs, &obj_ind);
 
-
-
-    //cl_float16 box1 = make_box(wrapped_objs, &wrapped_obj_ind, 130,0,65,  295,165,230, mat_red);
-    //box1 = make_translated(wrapped_objs, &wrapped_obj_ind, box1, 100,0,100);
-    //add_object(box1, objs, &obj_ind);
-
-    //cl_float16 box1 = make_box(wrapped_objs, &wrapped_obj_ind, 0,0,0,  165,330,165, mat_red);
-    //box1 = make_rotated(wrapped_objs, &wrapped_obj_ind, box1, AXIS_Y, 30);
-    //box1 = make_translated(wrapped_objs, &wrapped_obj_ind, box1, 265,0,295);
-    //add_object(box1, objs, &obj_ind);
-
-
-
-    cl_float16 box1 = make_box(wrapped_objs, &wrapped_obj_ind, 0,0,0,  165,330,165, mat_white);
+    cl_float16 box1 = make_box(wrapped_objs, &wrapped_obj_ind, 0,0,0,  165,330,165, mat_metal);
     box1 = make_rotated(wrapped_objs, &wrapped_obj_ind, box1, AXIS_Y, 15);
     box1 = make_translated(wrapped_objs, &wrapped_obj_ind, box1, 265,0,295);
     add_object(box1, objs, &obj_ind);
 
-    /**/
+    /*/
     cl_float16 box2 = make_box(wrapped_objs, &wrapped_obj_ind, 0,0,0,  165,165,165, mat_white);
     box2 = make_rotated(wrapped_objs, &wrapped_obj_ind, box2, AXIS_Y, -18);
     box2 = make_translated(wrapped_objs, &wrapped_obj_ind, box2, 130,0,65);
     add_object(box2, objs, &obj_ind);
     /*/
-    cl_float16 s1 = make_constant_medium_sphere(130, 150, 65, 100, 0.001, mat_isotropic);
+    //cl_float16 s1 = make_constant_medium_sphere(130, 150, 65, 100, 0.001, mat_isotropic);
+    //add_object(s1, objs, &obj_ind);
+    cl_float16 s1 = make_sphere(190, 90, 190, 90, mat_glass);
+    add_object(s1, lights, &light_ind);
     add_object(s1, objs, &obj_ind);
     /**/
 
-    //shared_ptr<hittable> box2 = make_shared<box>(point3(0,0,0), point3(165,165,165), white);
-    //box2 = make_shared<rotate_y>(box2, -18);
-    //box2 = make_shared<translate>(box2, vec3(130,0,65));
-    //objects.add(box2);
+
+    *allocated_objects = obj_ind;
+    *allocated_lights = light_ind;
     return 1;
 }
 
@@ -610,8 +613,10 @@ int main() {
     cl_float16 mats[MATS_COUNT];
     const int TEXS_COUNT = 128;
     cl_float16 texs[TEXS_COUNT];
-    err = setup_world(&objs[0], &wrapped_objs[0], &lights[0], &mats[0], &texs[0], OBJS_COUNT, WRAPPED_OBJS_COUNT, LIGHTS_COUNT, MATS_COUNT, TEXS_COUNT);
-    cl_uint8 world_data = {{OBJS_COUNT, WRAPPED_OBJS_COUNT, LIGHTS_COUNT, MATS_COUNT, TEXS_COUNT}};
+    int allocated_objects = 0;
+    int allocated_lights = 0;
+    err = setup_world(&objs[0], &wrapped_objs[0], &lights[0], &mats[0], &texs[0], OBJS_COUNT, WRAPPED_OBJS_COUNT, LIGHTS_COUNT, MATS_COUNT, TEXS_COUNT, &allocated_objects, &allocated_lights);
+    cl_uint8 world_data = {{OBJS_COUNT, WRAPPED_OBJS_COUNT, LIGHTS_COUNT, MATS_COUNT, TEXS_COUNT, allocated_objects, allocated_lights}};
     err = clSetKernelArg(kernel, argc, sizeof(cl_uint8), &world_data);
     argc++;
 
@@ -778,6 +783,11 @@ int main() {
                 float r = output[i].s[0]/samples_for_iteration;
                 float g = output[i].s[1]/samples_for_iteration;
                 float b = output[i].s[2]/samples_for_iteration;
+
+                // Replace NaN components with zero. See explanation in Ray Tracing: The Rest of Your Life.
+                if (r != r) r = 0.0;
+                if (g != g) g = 0.0;
+                if (b != b) b = 0.0;
 
                 //Gamma correction
                 r = fmax(fmin(sqrt(r), 0.99), 0.0);
