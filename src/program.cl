@@ -1112,7 +1112,7 @@ __kernel void render(uint8 chunk_data,
 
 
       //If I don't need to trace any more ray
-      if (bounced_ray.orig[0]>900){
+      if (bounced_ray.orig[0]==999){
          //Set dead ray
          rays[i+s][6] = 1.0;
 
