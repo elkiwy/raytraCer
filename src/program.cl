@@ -889,10 +889,11 @@ bool material_scatter(const Inputs* inputs, const int mat_ptr, const ray* r_in, 
       return false;
 
    //Isotropic
-   //}else if (mat[MATK_TYPE] == 4){
-   //    *scattered_ray = (ray){rec->p, random_in_unit_sphere(inputs)};
-   //    *attenuation = texture_value(inputs, &(inputs->textures[(int)round(mat[MATK_TEX_PTR])]), rec->u, rec->v, rec->p);
-   //    return true;
+   }else if (mat[MATK_TYPE] == 4){
+       srec->is_specular = 1;
+       srec->specular_ray = (ray){rec->p, random_in_unit_sphere(inputs)};
+       srec->attenuation = texture_value(inputs, &(inputs->textures[(int)round(mat[MATK_TEX_PTR])]), rec->u, rec->v, rec->p);
+       return true;
    }
 
    return false;
