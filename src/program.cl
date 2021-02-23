@@ -28,6 +28,7 @@ typedef struct Inputs {
 
    int GLOBAL_ID;
    int ITERATION;
+   int SAMPLE;
 } Inputs;
 
 float3 rus_to_rhemi(float3 rus, float3 normal);
@@ -125,6 +126,14 @@ void print16(__constant char* s, float16 v){
 }
 
 
+void print3(__constant char* s, float3 v){
+   printf("%s:\n", s);
+   for (int i=0;i<3;i++){
+      printf("  v[%d]: %f\n", i, v[i]);
+   }
+}
+
+
 
 
 
@@ -150,6 +159,13 @@ float3 ray_at(const ray* r, float t) {
 }
 
 
+void printray(__constant char* s, ray r){
+    printf("%s: \n %f %f %f  ->  %f %f %f   control:%f\n",
+           s,
+           r.orig[0], r.orig[1], r.orig[2],
+           r.dir[0], r.dir[1], r.dir[2],
+           123.0f);
+}
 
 
 
@@ -662,16 +678,11 @@ float noise(const Inputs* inp, float3 p) {
    float u = p[0] - floor(p[0]);
    float v = p[1] - floor(p[1]);
    float w = p[2] - floor(p[2]);
-   //u = u*u*(3-2*u);
-   //v = v*v*(3-2*v);
-   //w = w*w*(3-2*w);
-
    const int i = (int)floor(p[0]);
    const int j = (int)floor(p[1]);
    const int k = (int)floor(p[2]);
 
    float3 c[2][2][2];
-
    for(int di=0;di<2;di++){
       for(int dj=0;dj<2;dj++){
          for(int dk=0;dk<2;dk++){
@@ -728,15 +739,6 @@ float3 texture_value(const Inputs* inputs, const __global float16* tex_ptr, floa
    if (tex[TEXK_TYPE] == 0){
       return (float3){tex[TEXK_COL0], tex[TEXK_COL1], tex[TEXK_COL2]};
    }else if(tex[TEXK_TYPE] == 1){
-
-      //return (float3){1,1,1};
-
-      //float v = noise(inputs, tex[TEXK_SCALE] * p);
-      //return (float3){1,1,1} * 0.5f * (1.0f + v);
-
-      //float v = turb(inputs, tex[TEXK_SCALE] * p, 7);
-      //return (float3){1,1,1} * v;
-
       float v = 0.5 * (1.0f + sin(turb(inputs, p, 7)*10 + tex[TEXK_SCALE]*p[2]));
       return (float3){1,1,1} * v;
    }
@@ -1010,10 +1012,6 @@ __kernel void render(uint8 chunk_data,
 
    //Get Global 1D ID
    const uint GLOBAL_ID = get_global_id(1)*get_global_size(0)+get_global_id(0);
-   //if (GLOBAL_ID==0){printf("Last pass : %d!\n", pass_number);}
-
-
-
 
    //Unpack world data
    const int OBJS_COUNT         = world_data[0];
@@ -1087,6 +1085,8 @@ __kernel void render(uint8 chunk_data,
    //Final color
    const int i = (CHUNK_PY * CHUNK_W + CHUNK_PX)*SPP;
    for (int s=0;s<SPP;++s){
+       inputs.SAMPLE = s;
+
       //Skip dead rays
       if (rays[i+s][6] != 0){continue;}
 
