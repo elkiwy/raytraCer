@@ -441,9 +441,10 @@ bool hittable_hit(const Inputs* inputs, const float16 obj_to_test, const ray* r,
           float sqrtd = sqrt(discriminant);
           float root1 = (-half_b - sqrtd) / a;
           float root2 = (-half_b + sqrtd) / a;
-          if (root1 < t_min || closestSoFar < root1 || root2 < t_min || closestSoFar < root2){continue;}
+
+          //if (root1 < t_min || closestSoFar < root1 || root2 < t_min || closestSoFar < root2){continue;}
           if (root1 < t_min) root1 = t_min;
-          if (root2 < t_max) root2 = t_max;
+          if (root2 > t_max) root2 = t_max;
           if (root1 >= root2){continue;}
           root1 = max(0.0f, root1);
 
