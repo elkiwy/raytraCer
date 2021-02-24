@@ -551,12 +551,13 @@ int setup_world(cl_float16* objs, cl_float16* wrapped_objs, cl_float16* lights, 
 const unsigned long IMAGE_WIDTH  = 256*2;
 const unsigned long IMAGE_HEIGHT = 256*2;
 
-const int CHUNKS_SQRT = 2;
-const unsigned long CHUNKS_WIDTH  = IMAGE_WIDTH / CHUNKS_SQRT;
-const unsigned long CHUNKS_HEIGHT = IMAGE_HEIGHT / CHUNKS_SQRT;
 
-const int SPP = 128; //Samples per pixels
-const int ITERATIONS = 16; //Ray recursion count
+const int MIN_CHUNK_SQRT = 1;
+const int SPP = 128*8;//959; //Samples per pixels
+const int ITERATIONS = 8; //Ray recursion count
+
+
+
 
 int main() {
     /**
@@ -572,6 +573,42 @@ int main() {
     cl_context context = clCreateContext(NULL, 1, &device, NULL, NULL, &err);
     if(err < 0) {perror("Couldn't create a context"); exit(1);}
     cl_program program = build_program(context, device, PROGRAM_FILE);
+
+    // print device name
+    unsigned long long* value;
+    size_t valueSize;
+    clGetDeviceInfo(device, CL_DEVICE_MAX_MEM_ALLOC_SIZE, 0, NULL, &valueSize);
+    value = (unsigned long long*) malloc(valueSize);
+    clGetDeviceInfo(device, CL_DEVICE_MAX_MEM_ALLOC_SIZE, valueSize, value, NULL);
+    printf("Device: %llu\n", *value);
+    free(value);
+    unsigned long DEVICE_MAX_MEM_ALLOC = *value;
+    DEVICE_MAX_MEM_ALLOC = 512*1024*1024; //Override with 512 MB
+
+
+    /**
+    ** Optimal Chunks splitting
+     **/
+    const int ptr_size = 8;
+    int tmp_sqrt = MIN_CHUNK_SQRT;
+    unsigned long tmp_w = IMAGE_WIDTH / tmp_sqrt;
+    unsigned long tmp_h = IMAGE_HEIGHT / tmp_sqrt;
+    unsigned long tmp_ray_count = (tmp_w * tmp_h) * SPP;
+    unsigned long tmp_pool_bytes = tmp_ray_count*ptr_size;
+
+    while(tmp_pool_bytes >= DEVICE_MAX_MEM_ALLOC){
+        tmp_sqrt *= 2;
+        printf("%lu (%lu MB) rays are too much for device (MAX_MEM: %lu), splitting in %d chunks...\n", tmp_ray_count, tmp_pool_bytes/(1024*1024), DEVICE_MAX_MEM_ALLOC/(1024*1024), tmp_sqrt);fflush(stdout);
+        tmp_w = IMAGE_WIDTH / tmp_sqrt;
+        tmp_h = IMAGE_HEIGHT / tmp_sqrt;
+        tmp_ray_count = (tmp_w * tmp_h) * SPP;
+        tmp_pool_bytes = tmp_ray_count*ptr_size;
+    }
+
+    printf("%lu (%lu MB) rays are fine for device (MAX_MEM: %lu), splitted in %d chunks.\n", tmp_ray_count, tmp_pool_bytes/(1024*1024), DEVICE_MAX_MEM_ALLOC/(1024*1024), tmp_sqrt);fflush(stdout);
+    const int CHUNKS_SQRT = tmp_sqrt;
+    const unsigned long CHUNKS_WIDTH  = IMAGE_WIDTH / tmp_sqrt;
+    const unsigned long CHUNKS_HEIGHT = IMAGE_HEIGHT / tmp_sqrt;
 
     //Setup parallelization parameters
     size_t global_size[2] = {CHUNKS_WIDTH, CHUNKS_HEIGHT};
