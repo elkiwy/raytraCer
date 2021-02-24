@@ -833,12 +833,13 @@ int main() {
                 const unsigned long image_y = current_chunk_y + (chunk_y*CHUNKS_HEIGHT);
                 const unsigned long image_ind = (image_y * IMAGE_WIDTH) + image_x;
 
-                if (i==0){printf("\n\n%d pixel iteration %d: %f %f %f (%f samples)\n", i, 0, output[i].s[0], output[i].s[1], output[i].s[2], output[i].s[3]);}
+                //if (i==0){printf("\n\n%d pixel iteration %d: %f %f %f (%f samples)\n", i, 0, output[i].s[0], output[i].s[1], output[i].s[2], output[i].s[3]);}
                 //Average of samples
-                float samples_for_iteration = output[i].s[3];
-                float r = output[i].s[0]/samples_for_iteration;
-                float g = output[i].s[1]/samples_for_iteration;
-                float b = output[i].s[2]/samples_for_iteration;
+                float inv_samples_for_iteration = 1.0f/output[i].s[3];
+                float r = output[i].s[0]*inv_samples_for_iteration;
+                float g = output[i].s[1]*inv_samples_for_iteration;
+                float b = output[i].s[2]*inv_samples_for_iteration;
+
 
                 // Replace NaN components with zero. See explanation in Ray Tracing: The Rest of Your Life.
                 if (r != r) r = 0.0;
