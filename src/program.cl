@@ -1034,14 +1034,7 @@ __kernel void render(uint8 chunk_data,
    int seed = seeds[GLOBAL_ID % RANDOM_COUNT];
 
    //Unpack chunk data
-   //const uint CHUNK_X     = chunk_data[0];
-   //const uint CHUNK_Y     = chunk_data[1];
    const uint CHUNK_W     = chunk_data[2];
-   //const uint CHUNK_H     = chunk_data[3];
-   //const uint CHUNK_NUM_W = chunk_data[4];
-   //const uint CHUNK_NUM_H = chunk_data[5];
-   //const uint IMAGE_WIDTH  = CHUNK_W*CHUNK_NUM_W;
-   //const uint IMAGE_HEIGHT = CHUNK_H*CHUNK_NUM_H;
 
    //Unpack iteration data
    const uint ITERATION = iteration_data[0];
@@ -1070,70 +1063,74 @@ __kernel void render(uint8 chunk_data,
    inputs.lights_count = LIGHTS_COUNT;
    inputs.mats_count = MATS_COUNT;
    inputs.texs_count = TEXS_COUNT;
-
    inputs.allocated_objects = ALLOCATED_OBJECTS;
    inputs.allocated_lights = ALLOCATED_LIGHTS;
-
    inputs.rus = rus;
    inputs.rus_count = RUS_COUNT;
    inputs.seed = &seed;
    inputs.perlin_ranvec = perlin_ranvec;
    inputs.perlin_perms = perlin_perms;
    inputs.perlin_point_count = PERLIN_POINT_COUNT;
-
    inputs.GLOBAL_ID = GLOBAL_ID;
    inputs.ITERATION = ITERATION;
 
    //Final color
    const int i = (CHUNK_PY * CHUNK_W + CHUNK_PX)*SPP;
+
+   int bounced = 0;
+   int skipped = 0;
+   int killed = 0;
+
    for (int s=0;s<SPP;++s){
+       //Skip dead rays
+       if (rays[i+s][6] != 0){skipped++; continue;}
        inputs.SAMPLE = s;
 
-      //Skip dead rays
-      if (rays[i+s][6] != 0){continue;}
+       //Unpack the ray from the ray_pool
+       ray r;
+       r.orig[0] = rays[i+s][0];
+       r.orig[1] = rays[i+s][1];
+       r.orig[2] = rays[i+s][2];
+       r.dir[0]  = rays[i+s][3];
+       r.dir[1]  = rays[i+s][4];
+       r.dir[2]  = rays[i+s][5];
 
-      //Unpack the ray from the ray_pool
-      ray r;
-      r.orig[0] = rays[i+s][0];
-      r.orig[1] = rays[i+s][1];
-      r.orig[2] = rays[i+s][2];
-      r.dir[0]  = rays[i+s][3];
-      r.dir[1]  = rays[i+s][4];
-      r.dir[2]  = rays[i+s][5];
+       //Get the ray_color and retrieve an eventual bounced ray
+       ray bounced_ray = {(float3){999,999,999}, (float3){999,999,999}};
+       float3 sample_color;
+       if (ITERATION == ITERATIONS_COUNT-1){sample_color = (float3){0,0,0};
+       }else{sample_color = ray_color(&r, &bounced_ray, &inputs);}
 
-      //Get the ray_color and retrieve an eventual bounced ray
-      ray bounced_ray = {(float3){999,999,999}, (float3){999,999,999}};
-      float3 sample_color;
-      if (ITERATION == ITERATIONS_COUNT-1){sample_color = (float3){0,0,0};
-      }else{sample_color = ray_color(&r, &bounced_ray, &inputs);}
-
-      //Multiply the last sample with the new one. NB: these needs to be initiated to 1.0
-      rays[i+s][10] = rays[i+s][10] * sample_color[0];
-      rays[i+s][11] = rays[i+s][11] * sample_color[1];
-      rays[i+s][12] = rays[i+s][12] * sample_color[2];
+       //Multiply the last sample with the new one. NB: these needs to be initiated to 1.0
+       rays[i+s][10] = rays[i+s][10] * sample_color[0];
+       rays[i+s][11] = rays[i+s][11] * sample_color[1];
+       rays[i+s][12] = rays[i+s][12] * sample_color[2];
 
 
-      //If I don't need to trace any more ray
-      if (bounced_ray.orig[0]==999){
-         //Set dead ray
-         rays[i+s][6] = 1.0;
+       //If I don't need to trace any more ray
+       if (bounced_ray.orig[0]==999){
+           killed++;
 
-         //Save the final ray color into the samples to get averaged
-         const int CHUNK_IND = (CHUNK_PY * CHUNK_W) + CHUNK_PX;
-         output[CHUNK_IND] += (float4){rays[i+s][10], rays[i+s][11], rays[i+s][12], 1};
+           //Set dead ray
+           rays[i+s][6] = 1.0;
 
-         //If the ray is still active
-      }else{
-         //Unpack the bounced ray into the ray pool for the next pass
-         rays[i+s][0] = bounced_ray.orig[0];
-         rays[i+s][1] = bounced_ray.orig[1];
-         rays[i+s][2] = bounced_ray.orig[2];
-         rays[i+s][3] = bounced_ray.dir[0];
-         rays[i+s][4] = bounced_ray.dir[1];
-         rays[i+s][5] = bounced_ray.dir[2];
-      }
+           //Save the final ray color into the samples to get averaged
+           const int CHUNK_IND = (CHUNK_PY * CHUNK_W) + CHUNK_PX;
+           output[CHUNK_IND] += (float4){rays[i+s][10], rays[i+s][11], rays[i+s][12], 1};
+
+           //If the ray is still active
+       }else{
+           bounced++;
+
+           //Unpack the bounced ray into the ray pool for the next pass
+           rays[i+s][0] = bounced_ray.orig[0];
+           rays[i+s][1] = bounced_ray.orig[1];
+           rays[i+s][2] = bounced_ray.orig[2];
+           rays[i+s][3] = bounced_ray.dir[0];
+           rays[i+s][4] = bounced_ray.dir[1];
+           rays[i+s][5] = bounced_ray.dir[2];
+       }
    }
-
 
    //Save the seed for the next time this kernel gets enqueued.
    seeds[GLOBAL_ID % RANDOM_COUNT] = seed;
