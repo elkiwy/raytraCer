@@ -564,6 +564,7 @@ int main() {
      **/
     //Update random seed
     struct timeval time; gettimeofday(&time, NULL); srand(time.tv_usec);
+    printf("seed: %d\n",time.tv_usec);
 
     // Create device and context, and build program
     cl_int err;
@@ -599,6 +600,7 @@ int main() {
     printf("CHUNKS_HEIGHT: %lu\n", CHUNKS_HEIGHT);
     printf("CHUNKS NUMBER: %d\n", CHUNKS_SQRT * CHUNKS_SQRT);
     err = clSetKernelArg(kernel, argc, sizeof(cl_uint8), &chunk_data);
+    if(err != 0) {perror("Couldn't set kernel arg chunk_data"); exit(1);};
     const int ARGC_CHUNK_DATA = argc;
     argc++;
 
@@ -607,6 +609,7 @@ int main() {
     const int RUS_COUNT = 1024*4;
     cl_int4 parameters_data = {{SPP, RANDOM_SEEDS_COUNT, RUS_COUNT, PERLIN_POINT_COUNT}};
     err = clSetKernelArg(kernel, argc, sizeof(cl_int4), &parameters_data);
+    if(err != 0) {perror("Couldn't set kernel arg params_data"); exit(1);};
     const int ARGC_PARAMETERS_DATA = argc;
     argc++;
 
@@ -628,34 +631,49 @@ int main() {
     err = setup_world(&objs[0], &wrapped_objs[0], &lights[0], &mats[0], &texs[0], OBJS_COUNT, WRAPPED_OBJS_COUNT, LIGHTS_COUNT, MATS_COUNT, TEXS_COUNT, &allocated_objects, &allocated_lights);
     cl_uint8 world_data = {{OBJS_COUNT, WRAPPED_OBJS_COUNT, LIGHTS_COUNT, MATS_COUNT, TEXS_COUNT, allocated_objects, allocated_lights}};
     err = clSetKernelArg(kernel, argc, sizeof(cl_uint8), &world_data);
+    if(err != 0) {perror("Couldn't set kernel arg world_data"); exit(1);};
     argc++;
 
     //Objects
     cl_mem objects_buffer = clCreateBuffer(context, F_R_C, OBJS_COUNT * sizeof(cl_float16), objs, &err);
     err = clSetKernelArg(kernel, argc, sizeof(cl_mem), &objects_buffer);
+    if(err != 0) {perror("Couldn't set kernel arg objects"); exit(1);};
     argc++;
 
     //wrapped Objects
     cl_mem wrapped_objects_buffer = clCreateBuffer(context, F_R_C, WRAPPED_OBJS_COUNT * sizeof(cl_float16), wrapped_objs, &err);
     err = clSetKernelArg(kernel, argc, sizeof(cl_mem), &wrapped_objects_buffer);
+    if(err != 0) {perror("Couldn't set kernel arg wrapped_objs"); exit(1);};
     argc++;
 
     //Lights
     cl_mem lights_buffer = clCreateBuffer(context, F_R_C, LIGHTS_COUNT * sizeof(cl_float16), lights, &err);
     err = clSetKernelArg(kernel, argc, sizeof(cl_mem), &lights_buffer);
+    if(err != 0) {perror("Couldn't set kernel arg lights"); exit(1);};
     argc++;
 
     //Materials
     cl_mem materials_buffer = clCreateBuffer(context, F_R_C, MATS_COUNT * sizeof(cl_float16), mats, &err);
     err = clSetKernelArg(kernel, argc, sizeof(cl_mem), &materials_buffer);
+    if(err != 0) {perror("Couldn't set kernel arg materials"); exit(1);};
     argc++;
 
     //Textures
     cl_mem textures_buffer = clCreateBuffer(context, F_R_C, TEXS_COUNT * sizeof(cl_float16), texs, &err);
     err = clSetKernelArg(kernel, argc, sizeof(cl_mem), &textures_buffer);
+    if(err != 0) {perror("Couldn't set kernel arg textures"); exit(1);};
     argc++;
 
 
+
+
+    // 1024 -> float3
+    // 256 -> float3
+    // 256 -> int3
+    //
+    // 256 * 256 -> float4           =     1.000.000 bytes
+    // 959                             4.022.337.536
+    // 960 * 256 * 256 -> float16    = 4.026.531.840 byte
 
 
     //Ray Pools = {0,1,2 -> Origin; 3,4,5 -> Direction; 6 -> Used flag; 7 -> ??}
@@ -668,11 +686,12 @@ int main() {
     camera cam; init_camera(&cam, from, to, vup, vfov, 1.0, aperture, dist_to_focus);
 
     const unsigned long RAY_POOL_SIZE = (CHUNKS_WIDTH * CHUNKS_HEIGHT) * SPP;
-    printf("Creating ray_pool of size %luk\n", RAY_POOL_SIZE/1000);fflush(stdout);
+    printf("Creating ray_pool of size %lu MB bytes\n", (8*RAY_POOL_SIZE/(1024*1024)));fflush(stdout);
     cl_float16* ray_pool = malloc(sizeof(cl_float16)*RAY_POOL_SIZE);
     cl_mem ray_pool_buffer  = clCreateBuffer(context, F_RW_U, RAY_POOL_SIZE * sizeof(cl_float16), ray_pool, &err);
     if(err < 0) {perror("Couldn't create raypool a buffer"); exit(1);};
     err = clSetKernelArg(kernel, argc, sizeof(cl_mem),   &ray_pool_buffer);
+    if(err != 0) {perror("Couldn't set kernel arg rays"); exit(1);};
     printf("Created ray_pool\n");fflush(stdout);
     argc++;
 
@@ -680,14 +699,18 @@ int main() {
     cl_float3 rus[RUS_COUNT];
     for (int i=0; i<RUS_COUNT; ++i){rus[i] = random_in_unit_sphere();}
     cl_mem rus_buffer = clCreateBuffer(context, F_R_C, RUS_COUNT * sizeof(cl_float3), rus, &err);
+    if(err < 0) {perror("Couldn't create rus buffer"); exit(1);};
     err = clSetKernelArg(kernel, argc, sizeof(cl_mem), &rus_buffer);
+    if(err < 0) {perror("Couldn't set kernel arg for rus buffer"); exit(1);};
     argc++;
 
     //Random seeds
     cl_int random_seeds[RANDOM_SEEDS_COUNT];
     for (int i=0; i<RANDOM_SEEDS_COUNT; ++i){random_seeds[i] = rand();}
     cl_mem random_seeds_buffer = clCreateBuffer(context, F_R_C, RANDOM_SEEDS_COUNT * sizeof(cl_int), random_seeds, &err);
+    if(err < 0) {perror("Couldn't create seeds buffer"); exit(1);};
     err = clSetKernelArg(kernel, argc, sizeof(cl_mem), &random_seeds_buffer);
+    if(err < 0) {perror("Couldn't set kernel arg for seeds buffer"); exit(1);};
     argc++;
 
 
@@ -696,10 +719,14 @@ int main() {
     cl_float3 ranvec[PERLIN_POINT_COUNT];
     perlin_init(&perm_xyz[0], &ranvec[0]);
     cl_mem perlin_ranvec_buffer = clCreateBuffer(context, F_R_C, PERLIN_POINT_COUNT * sizeof(cl_float3), ranvec, &err);
+    if(err < 0) {perror("Couldn't create ranvec buffer"); exit(1);};
     err = clSetKernelArg(kernel, argc, sizeof(cl_mem), &perlin_ranvec_buffer);
+    if(err < 0) {perror("Couldn't set kernel arg for ranvec buffer"); exit(1);};
     argc++;
     cl_mem perlin_perm_buffer = clCreateBuffer(context, F_R_C, PERLIN_POINT_COUNT * sizeof(cl_int3), perm_xyz, &err);
+    if(err < 0) {perror("Couldn't create perms buffer"); exit(1);};
     err = clSetKernelArg(kernel, argc, sizeof(cl_mem), &perlin_perm_buffer);
+    if(err < 0) {perror("Couldn't set kernel arg for perms buffer"); exit(1);};
     argc++;
 
 
@@ -707,6 +734,7 @@ int main() {
     //Iterations data
     cl_uint2 iteration_data = (cl_uint2){{0, ITERATIONS}};
     err = clSetKernelArg(kernel, argc, sizeof(cl_uint2),  &iteration_data);
+    if(err < 0) {perror("Couldn't set kernel arg for iteration_data buffer"); exit(1);};
     const int ARGC_ITERATIONS_DATA = argc;
     argc++;
 
@@ -717,6 +745,7 @@ int main() {
     cl_mem output_buffer = clCreateBuffer(context, F_RW_C, PIXEL_COUNT_PER_CHUNK * sizeof(cl_float4), output, &err);
     if(err < 0) {perror("Couldn't create pixels a buffer"); exit(1);};
     err = clSetKernelArg(kernel, argc, sizeof(cl_mem), &output_buffer);
+    if(err < 0) {perror("Couldn't set kernel arg for pixels a buffer"); exit(1);};
     printf("Created output\n");fflush(stdout);
 
 
@@ -750,7 +779,7 @@ int main() {
             const unsigned long CHUNK_OFFX = CHUNKS_WIDTH*chunk_x;
             const unsigned long CHUNK_OFFY = CHUNKS_HEIGHT*chunk_y;
 
-            printf("Generating %luk rays...\n", CHUNKS_HEIGHT*CHUNKS_WIDTH*SPP/1000);
+            printf("\nGenerating %luk rays...\n", CHUNKS_HEIGHT*CHUNKS_WIDTH*SPP/1000);
             #pragma omp parallel for
             for(unsigned int k=0; k<THREADS; ++k){
                 for (int sy=step-1; sy>=0; --sy){
@@ -820,7 +849,6 @@ int main() {
                 r = fmax(fmin(sqrt(r), 0.99), 0.0);
                 g = fmax(fmin(sqrt(g), 0.99), 0.0);
                 b = fmax(fmin(sqrt(b), 0.99), 0.0);
-                if (i==0){printf("%d final values : %f %f %f \n", i, r, g, b);}
 
                 //Write to pixel buffer
                 pixelBytes[(image_ind*3)+0] = (unsigned char)(r*255);
@@ -829,8 +857,6 @@ int main() {
                 //if (i>180220){printf("done! %d\n", image_ind);fflush(stdout);}
             }
             printf("Chunk %d %d completed.\n", chunk_x, chunk_y);
-
-
         }
     }
 
