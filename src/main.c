@@ -21,22 +21,10 @@
 
 
 
+#include "utils.h"
+#include "camera.h"
+#include "objects.h"
 
-
-float random_double_unit() {return rand() / (RAND_MAX + 1.0);}
-float random_double(float min, float max) {return min + (max-min)*random_double_unit();}
-cl_float3 random_in_unit_disk() {
-    while (1) {
-        cl_float3 p = (cl_float3){{random_double(-1,1), random_double(-1,1), 0}};
-        if((p.s[0]*p.s[0] + p.s[1]*p.s[1] + p.s[2]*p.s[2]) < 1){return p;}
-    }
-}
-cl_float3 random_in_unit_sphere(){
-    while (1) {
-        cl_float3 p = {{random_double(-1,1), random_double(-1,1), random_double(-1,1)}};
-        if((p.s[0]*p.s[0] + p.s[1]*p.s[1] + p.s[2]*p.s[2]) < 1){return p;}
-    }
-}
 
 
 
@@ -103,98 +91,20 @@ cl_program build_program(cl_context ctx, cl_device_id dev, const char* filename)
 
 
 
-float float3_length(cl_float3 v){
-    return sqrt((v.s[0] * v.s[0]) + (v.s[1] * v.s[1]) + (v.s[2] * v.s[2]));
-}
 
-cl_float3 float3_normalize(cl_float3 v){
-    float l = float3_length(v);
-    return (cl_float3){{v.s[0]/l, v.s[1]/l, v.s[2]/l}};
-}
 
-cl_float3 float3_cross(cl_float3 v1, cl_float3 v2){
-    return (cl_float3){{
-        v1.s[1] * v2.s[2] - v1.s[2] * v2.s[1],
-        v1.s[2] * v2.s[0] - v1.s[0] * v2.s[2],
-        v1.s[0] * v2.s[1] - v1.s[1] * v2.s[0]
-    }};
-}
 
 
-typedef struct camera {
-    float origin[3];
-    float lower_left_corner[3];
-    float horizontal[3];
-    float vertical[3];
 
-    cl_float3 w, u, v;
-    float lens_radius;
-} camera;
-
 
-#define PI 3.1415926535897932385
-void init_camera(camera* c, cl_float3 from, cl_float3 at, cl_float3 vup, float vfov, float aspect_ratio, float aperture, float focus_dist) {
-    float theta = vfov * PI / 180.0;
-    float h = tan(theta/2);
-    float viewport_height = 2.0*h;
-    float viewport_width = aspect_ratio * viewport_height;
 
-    c->w = float3_normalize((cl_float3){{from.s[0]-at.s[0], from.s[1]-at.s[1], from.s[2]-at.s[2]}});
-    c->u = float3_normalize(float3_cross(vup, c->w));
-    c->v = float3_cross(c->w, c->u);
 
-    float focal_length = 1.0;
-    c->origin[0] = from.s[0];
-    c->origin[1] = from.s[1];
-    c->origin[2] = from.s[2];
-    c->horizontal[0] = focus_dist * viewport_width * c->u.s[0];
-    c->horizontal[1] = focus_dist * viewport_width * c->u.s[1];
-    c->horizontal[2] = focus_dist * viewport_width * c->u.s[2];
-    c->vertical[0] = focus_dist * viewport_height * c->v.s[0];
-    c->vertical[1] = focus_dist * viewport_height * c->v.s[1];
-    c->vertical[2] = focus_dist * viewport_height * c->v.s[2];
-    c->lower_left_corner[0] = c->origin[0] - c->horizontal[0]/2.0 - c->vertical[0]/2.0 - focus_dist*c->w.s[0];
-    c->lower_left_corner[1] = c->origin[1] - c->horizontal[1]/2.0 - c->vertical[1]/2.0 - focus_dist*c->w.s[1];
-    c->lower_left_corner[2] = c->origin[2] - c->horizontal[2]/2.0 - c->vertical[2]/2.0 - focus_dist*c->w.s[2];
 
-    c->lens_radius = aperture / 2.0;
-}
 
 
-void get_ray(const camera* cam, const double s, const double t, cl_float16* ray) {
-    float offset[3];
-    cl_float3 rd = random_in_unit_disk();
-    rd.s[0] *= cam->lens_radius;
-    rd.s[1] *= cam->lens_radius;
-    rd.s[2] *= cam->lens_radius;
 
-    offset[0] = cam->u.s[0]*rd.s[0] + cam->v.s[0]*rd.s[1];
-    offset[1] = cam->u.s[1]*rd.s[0] + cam->v.s[1]*rd.s[1];
-    offset[2] = cam->u.s[2]*rd.s[0] + cam->v.s[2]*rd.s[1];
 
 
-    /* 0, 1, 2 */
-    ray->s[0] = cam->origin[0] + offset[0];
-    ray->s[1] = cam->origin[1] + offset[1];
-    ray->s[2] = cam->origin[2] + offset[2];
-    /* 3, 4, 5 */
-    ray->s[3] = cam->lower_left_corner[0] + s*cam->horizontal[0] + t*cam->vertical[0] - cam->origin[0] - offset[0];
-    ray->s[4] = cam->lower_left_corner[1] + s*cam->horizontal[1] + t*cam->vertical[1] - cam->origin[1] - offset[1];
-    ray->s[5] = cam->lower_left_corner[2] + s*cam->horizontal[2] + t*cam->vertical[2] - cam->origin[2] - offset[2];
-    /* 6, 7, 8, 9 */
-    ray->s[6] = 0; //dead ray
-    ray->s[7] = 0;
-    ray->s[8] = 0;
-    ray->s[9] = 0;
-    /* 10, 11, 12 */ // RG
-    ray->s[10] = 1;
-    ray->s[11] = 1;
-    ray->s[12] = 1;
-    /* 13, 14, 15 */
-    ray->s[13] = 0;
-    ray->s[14] = 0;
-    ray->s[15] = 0;
-}
 
 
 
@@ -211,25 +121,6 @@ void get_ray(const camera* cam, const double s, const double t, cl_float16* ray)
 
 
 
-#define PERLIN_POINT_COUNT 256
-void perlin_init(cl_int3* perm_xyz, cl_float3* ranvec){
-    for (int i=0;i<PERLIN_POINT_COUNT; ++i){
-        ranvec[i] = float3_normalize((cl_float3){{random_double(-1, 1), random_double(-1, 1), random_double(-1, 1)}});
-    }
-    for(int i=0;i<PERLIN_POINT_COUNT;++i){
-        perm_xyz[i].s[0] = i;
-        perm_xyz[i].s[1] = i;
-        perm_xyz[i].s[2] = i;
-    }
-    for(int i=0;i<PERLIN_POINT_COUNT;++i){
-        for(int j=0;j<3;j++){
-            int target = rand() % PERLIN_POINT_COUNT;
-            int tmp = perm_xyz[i].s[j];
-            perm_xyz[i].s[j] = perm_xyz[target].s[j];
-            perm_xyz[target].s[j] = tmp;
-        }
-    }
-}
 
 
 
@@ -241,157 +132,6 @@ void perlin_init(cl_int3* perm_xyz, cl_float3* ranvec){
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-typedef enum{
-    MAT_LAMBERTIAN = 0,
-    MAT_METAL = 1,
-    MAT_DIELECTRIC = 2,
-    MAT_LIGHT = 3,
-    MAT_ISOTROPIC = 4
-} material_type;
-
-typedef enum{
-    OBJ_SPHERE = 0,
-    OBJ_RECT = 1,
-    OBJ_BOX = 2,
-    OBJ_ROTATED = 3,
-    OBJ_TRANSLATED = 4,
-    OBJ_CONSTANT_MEDIUM = 5,
-    OBJ_FLIP_FACE = 6
-} object_type;
-
-typedef enum{TEX_SOLID = 0, TEX_PERLIN = 1} texture_type;
-
-
-typedef enum{AXIS_XY = 0, AXIS_YZ = 1, AXIS_XZ = 2} axis;
-typedef enum{AXIS_X = 0, AXIS_Y = 1, AXIS_Z = 2} rot_axis;
-
-
-int add_object(cl_float16 obj, cl_float16* arr, int* ind){
-    arr[*ind] = obj;
-    *ind = *ind + 1;
-    return *ind - 1;
-}
-
-
-
-cl_float16 make_sphere(float cx,float cy,float cz, float r, int mat_ind){
-    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
-    o.s[0] = OBJ_SPHERE;
-    o.s[1] = cx;
-    o.s[2] = cy;
-    o.s[3] = cz;
-    o.s[7] = r;
-    o.s[8] = mat_ind;
-    return o;
-}
-
-
-cl_float16 make_rect(float c00,float c01, float c10,float c11, float z, axis a, int mat_ind){
-    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
-    o.s[0] = OBJ_RECT;
-    int c00_pos, c01_pos, c10_pos, c11_pos;
-    if (a==AXIS_XY){c00_pos = 1; c01_pos = 2; c10_pos = 4; c11_pos = 5;
-    }else if (a==AXIS_YZ){c00_pos = 2; c01_pos = 3; c10_pos = 5; c11_pos = 6;
-    }else{c00_pos = 1; c01_pos = 3; c10_pos = 4; c11_pos = 6;}
-    o.s[c00_pos] = c00;
-    o.s[c01_pos] = c01;
-    o.s[c10_pos] = c10;
-    o.s[c11_pos] = c11;
-    o.s[9] = z;
-    o.s[7] = a;
-    o.s[8] = mat_ind;
-    return o;
-}
-
-
-
-cl_float16 make_box(cl_float16* wrapped_objs, int* wrapped_obj_ind, float c0x,float c0y, float c0z,float c1x, float c1y, float c1z, int mat_ind){
-    int ptr1 = add_object(make_rect(c0x,c0y, c1x,c1y, c1z, AXIS_XY, mat_ind), wrapped_objs, wrapped_obj_ind);
-    int ptr2 = add_object(make_rect(c0x,c0y, c1x,c1y, c0z, AXIS_XY, mat_ind), wrapped_objs, wrapped_obj_ind);
-    int ptr3 = add_object(make_rect(c0x,c0z, c1x,c1z, c1y, AXIS_XZ, mat_ind), wrapped_objs, wrapped_obj_ind);
-    int ptr4 = add_object(make_rect(c0x,c0z, c1x,c1z, c0y, AXIS_XZ, mat_ind), wrapped_objs, wrapped_obj_ind);
-    int ptr5 = add_object(make_rect(c0y,c0z, c1y,c1z, c1x, AXIS_YZ, mat_ind), wrapped_objs, wrapped_obj_ind);
-    int ptr6 = add_object(make_rect(c0y,c0z, c1y,c1z, c0x, AXIS_YZ, mat_ind), wrapped_objs, wrapped_obj_ind);
-
-    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
-    o.s[0] = OBJ_BOX;
-    o.s[1] = c0x;
-    o.s[2] = c0y;
-    o.s[3] = c0z;
-    o.s[4] = c1x;
-    o.s[5] = c1y;
-    o.s[6] = c1z;
-    o.s[8] = mat_ind;
-
-    o.s[10] = ptr1;
-    o.s[11] = ptr2;
-    o.s[12] = ptr3;
-    o.s[13] = ptr4;
-    o.s[14] = ptr5;
-    o.s[15] = ptr6;
-
-    return o;
-}
-
-
-cl_float16 make_rotated(cl_float16* wrapped_objs, int* wrapped_obj_ind, cl_float16 obj, rot_axis ax, float angle){
-    int ptr = add_object(obj, wrapped_objs, wrapped_obj_ind);
-    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
-    o.s[0] = OBJ_ROTATED;
-    o.s[7] = ax;
-    o.s[9] = angle;
-    o.s[10] = ptr;
-    return o;
-}
-
-cl_float16 make_translated(cl_float16* wrapped_objs, int* wrapped_obj_ind, cl_float16 obj, float ox, float oy, float oz){
-    int ptr = add_object(obj, wrapped_objs, wrapped_obj_ind);
-    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
-    o.s[0] = OBJ_TRANSLATED;
-    o.s[1] = ox;
-    o.s[2] = oy;
-    o.s[3] = oz;
-    o.s[10] = ptr;
-    return o;
-}
-
-cl_float16 make_flip_face(cl_float16* wrapped_objs, int* wrapped_obj_ind, cl_float16 obj){
-    int ptr = add_object(obj, wrapped_objs, wrapped_obj_ind);
-    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
-    o.s[0] = OBJ_FLIP_FACE;
-    o.s[10] = ptr;
-    return o;
-}
-
-cl_float16 make_constant_medium_sphere(float cx, float cy, float cz, float r, float density, int mat_ind){
-    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
-    o.s[0] = OBJ_CONSTANT_MEDIUM;
-    o.s[1] = cx;
-    o.s[2] = cy;
-    o.s[3] = cz;
-    o.s[7] = r;
-    o.s[8] = mat_ind;
-    o.s[9] = -1.0f/density;
-    return o;
-}
 
 
 int setup_world(cl_float16* objs, cl_float16* wrapped_objs, cl_float16* lights,  cl_float16* mats, cl_float16* texs,
@@ -407,135 +147,62 @@ int setup_world(cl_float16* objs, cl_float16* wrapped_objs, cl_float16* lights, 
     for(unsigned int i=0;i<wrapped_obj_count;i++){wrapped_objs[i] = (cl_float16){{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};}
 
 
-
-    /* Materials:
-    **  0 -> type_flag
-    **  1,2,3 -> albedo
-    **  4 -> fuzz
-    **  5 -> ir
-    **  6 -> texture_index
-    **/
-
-    /* Objects / Lights:
-    **  0 -> type_flag
-    **  1,2,3 -> point1
-    **  4,5,6 -> point2
-    **  7 -> radius / axis
-    **  8 -> material_index
-    **  9 -> rect_k / rotation_angle / density
-    **
-    **  10 -> obj_ptr1
-    **  11 -> obj_ptr2
-    **  12 -> obj_ptr3
-    **  13 -> obj_ptr4
-    **  14 -> obj_ptr5
-    **  15 -> obj_ptr6
-    **/
-
-    /* Texture:
-    **  0 -> type_flag
-    **  1,2,3 -> color
-    **  4 -> scale
-    **/
-
     int wrapped_obj_ind = 0;
     int obj_ind = 0;
     int light_ind = 0;
     int mat_ind = 0;
     int tex_ind = 0;
 
-    texs[tex_ind].s[0] = TEX_SOLID;
-    texs[tex_ind].s[1] = 0.65;
-    texs[tex_ind].s[2] = 0.05;
-    texs[tex_ind].s[3] = 0.05;
-    mats[mat_ind].s[0] = MAT_LAMBERTIAN;
-    mats[mat_ind].s[6] = tex_ind;
-    int mat_red = mat_ind;
-    mat_ind++; tex_ind++;
+    int red_tex = add_to_list(make_texture_solid(0.65, 0.05, 0.05), texs, &tex_ind);
+    int mat_red = add_to_list(make_material_lambertian(red_tex), mats, &mat_ind);
 
-    texs[tex_ind].s[0] = TEX_SOLID;
-    texs[tex_ind].s[1] = 0.73;
-    texs[tex_ind].s[2] = 0.73;
-    texs[tex_ind].s[3] = 0.73;
-    mats[mat_ind].s[0] = MAT_LAMBERTIAN;
-    mats[mat_ind].s[6] = tex_ind;
-    int mat_white = mat_ind;
-    mat_ind++; tex_ind++;
+    int white_tex = add_to_list(make_texture_solid(0.73, 0.73, 0.73), texs, &tex_ind);
+    int mat_white = add_to_list(make_material_lambertian(white_tex), mats, &mat_ind);
 
-    texs[tex_ind].s[0] = TEX_SOLID;
-    texs[tex_ind].s[1] = 0.12;
-    texs[tex_ind].s[2] = 0.45;
-    texs[tex_ind].s[3] = 0.15;
-    mats[mat_ind].s[0] = MAT_LAMBERTIAN;
-    mats[mat_ind].s[6] = tex_ind;
-    int mat_green = mat_ind;
-    mat_ind++; tex_ind++;
+    int green_tex = add_to_list(make_texture_solid(0.12, 0.45, 0.15), texs, &tex_ind);
+    int mat_green = add_to_list(make_material_lambertian(green_tex), mats, &mat_ind);
 
-    texs[tex_ind].s[0] = TEX_SOLID;
-    texs[tex_ind].s[1] = 15;
-    texs[tex_ind].s[2] = 15;
-    texs[tex_ind].s[3] = 15;
-    mats[mat_ind].s[0] = MAT_LIGHT;
-    mats[mat_ind].s[6] = tex_ind;
-    int mat_light = mat_ind;
-    mat_ind++;tex_ind++;
+    int light_tex = add_to_list(make_texture_solid(15, 15, 15), texs, &tex_ind);
+    int mat_light = add_to_list(make_material_light(light_tex), mats, &mat_ind);
 
-    texs[tex_ind].s[0] = TEX_SOLID;
-    texs[tex_ind].s[1] = 1.0;
-    texs[tex_ind].s[2] = 1.0;
-    texs[tex_ind].s[3] = 1.0;
-    mats[mat_ind].s[0] = MAT_ISOTROPIC;
-    mats[mat_ind].s[6] = tex_ind;
-    int mat_isotropic = mat_ind;
-    mat_ind++; tex_ind++;
+    int isotropic_tex = add_to_list(make_texture_solid(1, 1, 1), texs, &tex_ind);
+    int mat_isotropic = add_to_list(make_material_isotropic(isotropic_tex), mats, &mat_ind);
 
-    mats[mat_ind].s[0] = MAT_DIELECTRIC;
-    mats[mat_ind].s[5] = 1.5;
-    int mat_glass = mat_ind;
-    mat_ind++; tex_ind++;
+    int mat_glass = add_to_list(make_material_glass(1.5), mats, &mat_ind);
+    mat_ind++;
 
 
-    texs[tex_ind].s[0] = TEX_SOLID;
-    texs[tex_ind].s[1] = 0.8;
-    texs[tex_ind].s[2] = 0.85;
-    texs[tex_ind].s[3] = 0.88;
-    mats[mat_ind].s[0] = MAT_METAL;
-    mats[mat_ind].s[4] = 0;
-    mats[mat_ind].s[6] = tex_ind;
-    int mat_metal = mat_ind;
-    mat_ind++; tex_ind++;
+    int metal_tex = add_to_list(make_texture_solid(0.8, 0.85, 0.88), texs, &tex_ind);
+    int mat_metal = add_to_list(make_material_metal(0, metal_tex), mats, &mat_ind);
 
-    add_object(make_rect(0,0, 555,555, 555, AXIS_YZ, mat_green), objs, &obj_ind);
-    add_object(make_rect(0,0, 555,555,   0, AXIS_YZ, mat_red), objs, &obj_ind);
+
+
+
+    add_to_list(make_rect(0,0, 555,555, 555, AXIS_YZ, mat_green), objs, &obj_ind);
+    add_to_list(make_rect(0,0, 555,555,   0, AXIS_YZ, mat_red), objs, &obj_ind);
 
     cl_float16 light = make_rect(213,227, 343,332, 554, AXIS_XZ, mat_light);
-    add_object(light, lights, &light_ind);
+    add_to_list(light, lights, &light_ind);
     light = make_flip_face(wrapped_objs, &wrapped_obj_ind, light);
-    add_object(light, objs, &obj_ind);
+    add_to_list(light, objs, &obj_ind);
 
-    add_object(make_rect(0,0, 555,555,   0, AXIS_XZ, mat_white), objs, &obj_ind);
-    add_object(make_rect(0,0, 555,555, 555, AXIS_XZ, mat_white), objs, &obj_ind);
-    add_object(make_rect(0,0, 555,555, 555, AXIS_XY, mat_white), objs, &obj_ind);
+    add_to_list(make_rect(0,0, 555,555,   0, AXIS_XZ, mat_white), objs, &obj_ind);
+    add_to_list(make_rect(0,0, 555,555, 555, AXIS_XZ, mat_white), objs, &obj_ind);
+    add_to_list(make_rect(0,0, 555,555, 555, AXIS_XY, mat_white), objs, &obj_ind);
 
 
 
-    cl_float16 box1 = make_box(wrapped_objs, &wrapped_obj_ind, 0,0,0,  165,330,165, mat_metal);
-    box1 = make_rotated(wrapped_objs, &wrapped_obj_ind, box1, AXIS_Y, 15);
-    box1 = make_translated(wrapped_objs, &wrapped_obj_ind, box1, 265,0,295);
-    add_object(box1, objs, &obj_ind);
+    //cl_float16 box1 = make_box(wrapped_objs, &wrapped_obj_ind, 0,0,0,  165,330,165, mat_white);
+    //box1 = make_rotated(wrapped_objs, &wrapped_obj_ind, box1, AXIS_Y, 15);
+    //box1 = make_translated(wrapped_objs, &wrapped_obj_ind, box1, 265,0,295);
+    //add_object(box1, objs, &obj_ind);
 
-    /*/
-    cl_float16 box2 = make_box(wrapped_objs, &wrapped_obj_ind, 0,0,0,  165,165,165, mat_white);
-    box2 = make_rotated(wrapped_objs, &wrapped_obj_ind, box2, AXIS_Y, -18);
-    box2 = make_translated(wrapped_objs, &wrapped_obj_ind, box2, 130,0,65);
-    add_object(box2, objs, &obj_ind);
-    /*/
-    //cl_float16 s1 = make_constant_medium_sphere(130, 150, 65, 100, 0.001, mat_isotropic);
-    //add_object(s1, objs, &obj_ind);
-    cl_float16 s1 = make_sphere(190, 90, 190, 90, mat_glass);
-    add_object(s1, lights, &light_ind);
-    add_object(s1, objs, &obj_ind);
-    /**/
+    //cl_float16 box2 = make_box(wrapped_objs, &wrapped_obj_ind, 0,0,0,  165,165,165, mat_white);
+    //box2 = make_rotated(wrapped_objs, &wrapped_obj_ind, box2, AXIS_Y, -18);
+    //box2 = make_translated(wrapped_objs, &wrapped_obj_ind, box2, 130,0,65);
+    //add_object(box2, objs, &obj_ind);
+
+    //add_object(make_constant_medium_sphere(    275, 300, 275, 2500,  0.0005, mat_isotropic), objs, &obj_ind);
 
 
     *allocated_objects = obj_ind;
@@ -548,18 +215,103 @@ int setup_world(cl_float16* objs, cl_float16* wrapped_objs, cl_float16* lights, 
 
 
 
-const unsigned long IMAGE_WIDTH  = 256*2;
-const unsigned long IMAGE_HEIGHT = 256*2;
 
 
-const int MIN_CHUNK_SQRT = 1;
-const int SPP = 128*8;//959; //Samples per pixels
-const int ITERATIONS = 8; //Ray recursion count
+int get_optimal_chunk_splitting(const int img_w, const int img_h, const int samples_per_pixel, cl_device_id dev){
+    //unsigned long long* value;
+    //size_t valueSize;
+    //clGetDeviceInfo(dev, CL_DEVICE_MAX_MEM_ALLOC_SIZE, 0, NULL, &valueSize);
+    //value = (unsigned long long*) malloc(valueSize);
+    //clGetDeviceInfo(dev, CL_DEVICE_MAX_MEM_ALLOC_SIZE, valueSize, value, NULL);
+    //printf("Device: %llu\n", *value);
+    //free(value);
+    //unsigned long DEVICE_MAX_MEM_ALLOC = *value;
+    unsigned long DEVICE_MAX_MEM_ALLOC = 512*1024*1024; //Override with 512 MB
+
+    const int ptr_size = 8;
+    int tmp_sqrt = 1;
+    unsigned long tmp_w = img_w / tmp_sqrt;
+    unsigned long tmp_h = img_h / tmp_sqrt;
+    unsigned long tmp_ray_count = (tmp_w * tmp_h) * samples_per_pixel;
+    unsigned long tmp_pool_bytes = tmp_ray_count*ptr_size;
+
+    while(tmp_pool_bytes >= DEVICE_MAX_MEM_ALLOC){
+        tmp_sqrt *= 2;
+        printf("%lu (%lu MB) rays are too much for device (MAX_MEM: %lu), splitting in %d chunks...\n", tmp_ray_count, tmp_pool_bytes/(1024*1024), DEVICE_MAX_MEM_ALLOC/(1024*1024), tmp_sqrt);fflush(stdout);
+        tmp_w = img_w / tmp_sqrt;
+        tmp_h = img_h / tmp_sqrt;
+        tmp_ray_count = (tmp_w * tmp_h) * samples_per_pixel;
+        tmp_pool_bytes = tmp_ray_count*ptr_size;
+    }
+
+    printf("%lu (%lu MB) rays are fine for device (MAX_MEM: %lu), splitted in %d chunks.\n", tmp_ray_count, tmp_pool_bytes/(1024*1024), DEVICE_MAX_MEM_ALLOC/(1024*1024), tmp_sqrt);fflush(stdout);
+    return tmp_sqrt;
+}
 
 
 
 
-int main() {
+
+
+
+
+
+
+
+
+
+
+
+typedef struct scene_settings{
+    int res_width;
+    int res_height;
+    int samples_per_pixel;
+    int iterations;
+}scene_settings;
+
+typedef struct scene{
+    cl_float16* objs;
+    cl_float16* lights;
+    cl_float16* wrapped_objs;
+    cl_float16* mats;
+    cl_float16* texs;
+
+    int objs_max;
+    int lights_max;
+    int wrapped_objs_max;
+    int mats_max;
+    int texs_max;
+
+    int objs_count;
+    int lights_count;
+}scene;
+
+
+void render_scene(const scene* s, const scene_settings* settings){
+    cl_int err;
+
+    //Unpack settings
+    const unsigned long IMAGE_WIDTH  = settings->res_width;
+    const unsigned long IMAGE_HEIGHT = settings->res_height;
+    const int SPP = settings->samples_per_pixel;
+    const int ITERATIONS = settings->iterations;
+
+    //Unpack scene
+    const int OBJS_COUNT = s->objs_max;
+    cl_float16* objs = s->objs;
+    int allocated_objects = s->objs_count;
+    const int WRAPPED_OBJS_COUNT = s->wrapped_objs_max;
+    cl_float16* wrapped_objs = s->wrapped_objs;
+    const int LIGHTS_COUNT = s->lights_max;
+    cl_float16* lights = s->lights;
+    int allocated_lights = s->lights_count;
+    const int MATS_COUNT = s->mats_max;
+    cl_float16* mats = s->mats;
+    const int TEXS_COUNT = s->texs_max;
+    cl_float16* texs = s->texs;
+
+
+
     /**
     ** OpenCL Configuration
      **/
@@ -568,47 +320,16 @@ int main() {
     printf("seed: %d\n",time.tv_usec);
 
     // Create device and context, and build program
-    cl_int err;
     cl_device_id device = create_device();
     cl_context context = clCreateContext(NULL, 1, &device, NULL, NULL, &err);
     if(err < 0) {perror("Couldn't create a context"); exit(1);}
     cl_program program = build_program(context, device, PROGRAM_FILE);
 
-    // print device name
-    unsigned long long* value;
-    size_t valueSize;
-    clGetDeviceInfo(device, CL_DEVICE_MAX_MEM_ALLOC_SIZE, 0, NULL, &valueSize);
-    value = (unsigned long long*) malloc(valueSize);
-    clGetDeviceInfo(device, CL_DEVICE_MAX_MEM_ALLOC_SIZE, valueSize, value, NULL);
-    printf("Device: %llu\n", *value);
-    free(value);
-    unsigned long DEVICE_MAX_MEM_ALLOC = *value;
-    DEVICE_MAX_MEM_ALLOC = 512*1024*1024; //Override with 512 MB
 
+    const int CHUNKS_SQRT = get_optimal_chunk_splitting(IMAGE_WIDTH, IMAGE_HEIGHT, SPP, device);
+    const unsigned long CHUNKS_WIDTH  = IMAGE_WIDTH / CHUNKS_SQRT;
+    const unsigned long CHUNKS_HEIGHT = IMAGE_HEIGHT / CHUNKS_SQRT;
 
-    /**
-    ** Optimal Chunks splitting
-     **/
-    const int ptr_size = 8;
-    int tmp_sqrt = MIN_CHUNK_SQRT;
-    unsigned long tmp_w = IMAGE_WIDTH / tmp_sqrt;
-    unsigned long tmp_h = IMAGE_HEIGHT / tmp_sqrt;
-    unsigned long tmp_ray_count = (tmp_w * tmp_h) * SPP;
-    unsigned long tmp_pool_bytes = tmp_ray_count*ptr_size;
-
-    while(tmp_pool_bytes >= DEVICE_MAX_MEM_ALLOC){
-        tmp_sqrt *= 2;
-        printf("%lu (%lu MB) rays are too much for device (MAX_MEM: %lu), splitting in %d chunks...\n", tmp_ray_count, tmp_pool_bytes/(1024*1024), DEVICE_MAX_MEM_ALLOC/(1024*1024), tmp_sqrt);fflush(stdout);
-        tmp_w = IMAGE_WIDTH / tmp_sqrt;
-        tmp_h = IMAGE_HEIGHT / tmp_sqrt;
-        tmp_ray_count = (tmp_w * tmp_h) * SPP;
-        tmp_pool_bytes = tmp_ray_count*ptr_size;
-    }
-
-    printf("%lu (%lu MB) rays are fine for device (MAX_MEM: %lu), splitted in %d chunks.\n", tmp_ray_count, tmp_pool_bytes/(1024*1024), DEVICE_MAX_MEM_ALLOC/(1024*1024), tmp_sqrt);fflush(stdout);
-    const int CHUNKS_SQRT = tmp_sqrt;
-    const unsigned long CHUNKS_WIDTH  = IMAGE_WIDTH / tmp_sqrt;
-    const unsigned long CHUNKS_HEIGHT = IMAGE_HEIGHT / tmp_sqrt;
 
     //Setup parallelization parameters
     size_t global_size[2] = {CHUNKS_WIDTH, CHUNKS_HEIGHT};
@@ -653,19 +374,6 @@ int main() {
 
 
     //World setup
-    const int OBJS_COUNT = 128;
-    cl_float16 objs[OBJS_COUNT];
-    const int WRAPPED_OBJS_COUNT = 128;
-    cl_float16 wrapped_objs[OBJS_COUNT];
-    const int LIGHTS_COUNT = 128;
-    cl_float16 lights[LIGHTS_COUNT];
-    const int MATS_COUNT = 128;
-    cl_float16 mats[MATS_COUNT];
-    const int TEXS_COUNT = 128;
-    cl_float16 texs[TEXS_COUNT];
-    int allocated_objects = 0;
-    int allocated_lights = 0;
-    err = setup_world(&objs[0], &wrapped_objs[0], &lights[0], &mats[0], &texs[0], OBJS_COUNT, WRAPPED_OBJS_COUNT, LIGHTS_COUNT, MATS_COUNT, TEXS_COUNT, &allocated_objects, &allocated_lights);
     cl_uint8 world_data = {{OBJS_COUNT, WRAPPED_OBJS_COUNT, LIGHTS_COUNT, MATS_COUNT, TEXS_COUNT, allocated_objects, allocated_lights}};
     err = clSetKernelArg(kernel, argc, sizeof(cl_uint8), &world_data);
     if(err != 0) {perror("Couldn't set kernel arg world_data"); exit(1);};
@@ -906,6 +614,8 @@ int main() {
     stbi_write_png("test_opencl.png", IMAGE_WIDTH, IMAGE_HEIGHT, CHANNELS, pixelBytes, IMAGE_WIDTH * CHANNELS);
 
 
+
+
     //Deallocate resources
     free(ray_pool);
     free(pixelBytes);
@@ -927,5 +637,60 @@ int main() {
     clReleaseCommandQueue(queue);
     clReleaseProgram(program);
     clReleaseContext(context);
+}
+
+
+
+int main() {
+    cl_int err;
+    const unsigned long IMAGE_WIDTH  = 256*2;
+    const unsigned long IMAGE_HEIGHT = 256*2;
+    const int SPP = 128*8;//959; //Samples per pixels
+    const int ITERATIONS = 8; //Ray recursion count
+
+
+    const int OBJS_COUNT = 128;
+    cl_float16 objs[OBJS_COUNT];
+    const int WRAPPED_OBJS_COUNT = 128;
+    cl_float16 wrapped_objs[OBJS_COUNT];
+    const int LIGHTS_COUNT = 128;
+    cl_float16 lights[LIGHTS_COUNT];
+    const int MATS_COUNT = 128;
+    cl_float16 mats[MATS_COUNT];
+    const int TEXS_COUNT = 128;
+    cl_float16 texs[TEXS_COUNT];
+    int allocated_objects = 0;
+    int allocated_lights = 0;
+
+
+    err = setup_world(&objs[0], &wrapped_objs[0], &lights[0], &mats[0], &texs[0], OBJS_COUNT, WRAPPED_OBJS_COUNT, LIGHTS_COUNT, MATS_COUNT, TEXS_COUNT, &allocated_objects, &allocated_lights);
+
+
+    scene_settings settings;
+    settings.res_width         = 256*2;
+    settings.res_height        = settings.res_width;
+    settings.samples_per_pixel = 128*8;
+    settings.iterations        = 8;
+
+
+    scene s;
+    s.objs_max = 128;
+    s.objs = objs;
+    s.objs_count = allocated_objects;
+    s.wrapped_objs_max = 128;
+    s.wrapped_objs = wrapped_objs;
+    s.lights_max = 128;
+    s.lights = lights;
+    s.lights_count = allocated_lights;
+    s.mats_max = 128;
+    s.mats = mats;
+    s.texs_max = 128;
+    s.texs = texs;
+
+
+
+    render_scene(&s, &settings);
+
+
     return 0;
 }

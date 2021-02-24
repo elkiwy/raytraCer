@@ -11,7 +11,7 @@ OBJECTS_WITHOUT_MAIN := $(filter-out $(OBJ)/main.o, $(OBJECTS))
 
 
 LINUX_EXTRA_LIBS= -L/usr/lib/x86_64-linux-gnu -lm
-OPENMP = #-fopenmp
+OPENMP = -fopenmp
 
 OPENCL = -framework OpenCL -arch x86_64 -DUNIX -DDEBUG -DMAC
 WARNS = -Wextra -Werror=implicit-int -Werror=incompatible-pointer-types -Werror=int-conversion
