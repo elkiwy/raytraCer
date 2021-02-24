@@ -11,9 +11,15 @@
 
 #include <OpenCL/cl.h>
 
+//Include OpemMP for multithreading
+#include <omp.h>
+
+
 //STB Image write to output png
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "external/stb_image_write.h"
+
+
 
 
 
@@ -155,7 +161,7 @@ void init_camera(camera* c, cl_float3 from, cl_float3 at, cl_float3 vup, float v
 }
 
 
-cl_float16 get_ray(camera* cam, double s, double t) {
+void get_ray(const camera* cam, const double s, const double t, cl_float16* ray) {
     float offset[3];
     cl_float3 rd = random_in_unit_disk();
     rd.s[0] *= cam->lens_radius;
@@ -166,23 +172,28 @@ cl_float16 get_ray(camera* cam, double s, double t) {
     offset[1] = cam->u.s[1]*rd.s[0] + cam->v.s[1]*rd.s[1];
     offset[2] = cam->u.s[2]*rd.s[0] + cam->v.s[2]*rd.s[1];
 
-    return (cl_float16){{
-        /* 0, 1, 2 */
-        cam->origin[0] + offset[0],
-        cam->origin[1] + offset[1],
-        cam->origin[2] + offset[2],
-        /* 3, 4, 5 */
-        cam->lower_left_corner[0] + s*cam->horizontal[0] + t*cam->vertical[0] - cam->origin[0] - offset[0],
-        cam->lower_left_corner[1] + s*cam->horizontal[1] + t*cam->vertical[1] - cam->origin[1] - offset[1],
-        cam->lower_left_corner[2] + s*cam->horizontal[2] + t*cam->vertical[2] - cam->origin[2] - offset[2],
-        /* 6, 7, 8, 9 */
-        0, //dead ray
-        0, 0, 0,
-        /* 10, 11, 12 */ // RGB
-        1, 1, 1,
-        /* 13, 14, 15 */
-        0, 0, 0
-    }};
+
+    /* 0, 1, 2 */
+    ray->s[0] = cam->origin[0] + offset[0];
+    ray->s[1] = cam->origin[1] + offset[1];
+    ray->s[2] = cam->origin[2] + offset[2];
+    /* 3, 4, 5 */
+    ray->s[3] = cam->lower_left_corner[0] + s*cam->horizontal[0] + t*cam->vertical[0] - cam->origin[0] - offset[0];
+    ray->s[4] = cam->lower_left_corner[1] + s*cam->horizontal[1] + t*cam->vertical[1] - cam->origin[1] - offset[1];
+    ray->s[5] = cam->lower_left_corner[2] + s*cam->horizontal[2] + t*cam->vertical[2] - cam->origin[2] - offset[2];
+    /* 6, 7, 8, 9 */
+    ray->s[6] = 0; //dead ray
+    ray->s[7] = 0;
+    ray->s[8] = 0;
+    ray->s[9] = 0;
+    /* 10, 11, 12 */ // RG
+    ray->s[10] = 1;
+    ray->s[11] = 1;
+    ray->s[12] = 1;
+    /* 13, 14, 15 */
+    ray->s[13] = 0;
+    ray->s[14] = 0;
+    ray->s[15] = 0;
 }
 
 
@@ -469,7 +480,6 @@ int setup_world(cl_float16* objs, cl_float16* wrapped_objs, cl_float16* lights, 
     int mat_light = mat_ind;
     mat_ind++;tex_ind++;
 
-
     texs[tex_ind].s[0] = TEX_SOLID;
     texs[tex_ind].s[1] = 1.0;
     texs[tex_ind].s[2] = 1.0;
@@ -733,16 +743,33 @@ int main() {
             //Update ray pool data
             const float INV_W = 1.0f/(IMAGE_WIDTH-1);
             const float INV_H = 1.0f/(IMAGE_HEIGHT-1);
-            for (unsigned long py=0; py<CHUNKS_HEIGHT; ++py){
-                for (unsigned long px=0; px<CHUNKS_WIDTH; ++px){
-                    for (int s=0;s<SPP;++s){
-                        float u = ((float)(px + CHUNKS_WIDTH*chunk_x) + random_double_unit()) * INV_W;
-                        float v = ((float)(py + CHUNKS_HEIGHT*chunk_y) + random_double_unit()) * INV_H;
-                        int ray_index = ((py * CHUNKS_WIDTH + px) * SPP) + s;
-                        ray_pool[ray_index] = get_ray(&cam, u, v);
+
+            const unsigned long THREADS = 8;
+            const unsigned long step = CHUNKS_HEIGHT/THREADS;
+
+            const unsigned long CHUNK_OFFX = CHUNKS_WIDTH*chunk_x;
+            const unsigned long CHUNK_OFFY = CHUNKS_HEIGHT*chunk_y;
+
+            printf("Generating %luk rays...\n", CHUNKS_HEIGHT*CHUNKS_WIDTH*SPP/1000);
+            #pragma omp parallel for
+            for(unsigned int k=0; k<THREADS; ++k){
+                for (int sy=step-1; sy>=0; --sy){
+                    unsigned long py = sy + k*step;
+
+                    for (unsigned long px=0; px<CHUNKS_WIDTH; ++px){
+                        for (int s=0;s<SPP;++s){
+                            float u = ((float)(px + CHUNK_OFFX) + random_double_unit()) * INV_W;
+                            float v = ((float)(py + CHUNK_OFFY) + random_double_unit()) * INV_H;
+                            int ray_index = ((py * CHUNKS_WIDTH + px) * SPP) + s;
+                            get_ray(&cam, u, v, &ray_pool[ray_index]);
+                        }
                     }
                 }
+                //int thread_id = omp_get_thread_num();
+                //printf("Thread %d done.\n", thread_id);
             }
+            printf("Done\n");
+
 
             //Update output buffer
             for (unsigned long i=0;i<PIXEL_COUNT_PER_CHUNK;i++){output[i].s[0] = 0; output[i].s[1] = 0; output[i].s[2] = 0; output[i].s[3] = 0;}
