@@ -72,11 +72,50 @@ typedef enum{AXIS_X = 0, AXIS_Y = 1, AXIS_Z = 2} rot_axis;
 
 
 
-int add_to_list(cl_float16 item, cl_float16* arr, int* ind){
-    arr[*ind] = item;
-    *ind = *ind + 1;
-    return *ind - 1;
-}
+
+typedef struct Texture{
+    cl_float16 data;
+}Texture;
+
+
+typedef struct Material{
+    cl_float16 data;
+    Texture* texture;
+}Material;
+
+
+typedef struct Object{
+    cl_float16 data;
+    Material* material;
+    void* wrapped_objs[6];
+}Object;
+
+
+
+
+
+typedef struct ObjectList{
+    Object** objects;
+    int used;
+    int size;
+}ObjectList;
+
+
+ObjectList* make_objectList(int size);
+void add_object_to_objectList(Object* obj, ObjectList* list);
+
+
+
+
+
+
+
+
+
+
+
+int add_to_list(cl_float16 item, cl_float16* arr, int* ind);
+void free_object(Object* obj);
 
 
 
@@ -86,17 +125,7 @@ int add_to_list(cl_float16 item, cl_float16* arr, int* ind){
  *
  * */
 
-cl_float16 make_texture_solid(float r,float g,float b){
-    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
-    o.s[0] = TEX_SOLID;
-    o.s[1] = r;
-    o.s[2] = g;
-    o.s[3] = b;
-    return o;
-}
-
-
-
+Texture* make_texture_solid(float r,float g,float b);
 
 
 
@@ -106,57 +135,11 @@ cl_float16 make_texture_solid(float r,float g,float b){
  *
  * */
 
-cl_float16 make_material_lambertian(int texture_id){
-    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
-    o.s[0] = MAT_LAMBERTIAN;
-    o.s[6] = texture_id;
-    return o;
-}
-
-
-
-cl_float16 make_material_light(int texture_id){
-    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
-    o.s[0] = MAT_LIGHT;
-    o.s[6] = texture_id;
-    return o;
-}
-
-
-
-cl_float16 make_material_isotropic(int texture_id){
-    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
-    o.s[0] = MAT_ISOTROPIC;
-    o.s[6] = texture_id;
-    return o;
-}
-
-
-
-cl_float16 make_material_metal(float fuzz, int texture_id){
-    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
-    o.s[0] = MAT_ISOTROPIC;
-    o.s[4] = fuzz;
-    o.s[6] = texture_id;
-    return o;
-}
-
-
-
-cl_float16 make_material_glass(float ir){
-    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
-    o.s[0] = MAT_DIELECTRIC;
-    o.s[5] = ir;
-    return o;
-}
-
-
-
-
-
-
-
-
+Material* make_material_lambertian(Texture* texture);
+Material* make_material_light(Texture* texture);
+Material* make_material_isotropic(Texture* texture);
+Material* make_material_metal(float fuzz, Texture* texture);
+Material* make_material_dielectric(float ir);
 
 
 
@@ -166,115 +149,23 @@ cl_float16 make_material_glass(float ir){
  *
  * */
 
+Object* make_sphere(float cx,float cy,float cz, float r, Material* mat);
+Object* make_rect(float c00,float c01, float c10,float c11, float z, axis a, Material* mat);
+Object* make_box(float c0x,float c0y, float c0z,float c1x, float c1y, float c1z, Material* mat);
+Object* make_rotated(Object* obj, rot_axis ax, float angle);
+Object* make_translated(Object* obj, float ox, float oy, float oz);
+Object* make_flip_face(Object* obj);
+Object* make_constant_medium_sphere(float cx, float cy, float cz, float r, float density, Material* mat);
 
 
 
-cl_float16 make_sphere(float cx,float cy,float cz, float r, int mat_ind){
-    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
-    o.s[0] = OBJ_SPHERE;
-    o.s[1] = cx;
-    o.s[2] = cy;
-    o.s[3] = cz;
-    o.s[7] = r;
-    o.s[8] = mat_ind;
-    return o;
-}
+/**
+ * Objects utilities
+ * */
 
-
-
-cl_float16 make_rect(float c00,float c01, float c10,float c11, float z, axis a, int mat_ind){
-    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
-    o.s[0] = OBJ_RECT;
-    int c00_pos, c01_pos, c10_pos, c11_pos;
-    if (a==AXIS_XY){c00_pos = 1; c01_pos = 2; c10_pos = 4; c11_pos = 5;
-    }else if (a==AXIS_YZ){c00_pos = 2; c01_pos = 3; c10_pos = 5; c11_pos = 6;
-    }else{c00_pos = 1; c01_pos = 3; c10_pos = 4; c11_pos = 6;}
-    o.s[c00_pos] = c00;
-    o.s[c01_pos] = c01;
-    o.s[c10_pos] = c10;
-    o.s[c11_pos] = c11;
-    o.s[9] = z;
-    o.s[7] = a;
-    o.s[8] = mat_ind;
-    return o;
-}
-
-
-
-cl_float16 make_box(cl_float16* wrapped_objs, int* wrapped_obj_ind, float c0x,float c0y, float c0z,float c1x, float c1y, float c1z, int mat_ind){
-    int ptr1 = add_to_list(make_rect(c0x,c0y, c1x,c1y, c1z, AXIS_XY, mat_ind), wrapped_objs, wrapped_obj_ind);
-    int ptr2 = add_to_list(make_rect(c0x,c0y, c1x,c1y, c0z, AXIS_XY, mat_ind), wrapped_objs, wrapped_obj_ind);
-    int ptr3 = add_to_list(make_rect(c0x,c0z, c1x,c1z, c1y, AXIS_XZ, mat_ind), wrapped_objs, wrapped_obj_ind);
-    int ptr4 = add_to_list(make_rect(c0x,c0z, c1x,c1z, c0y, AXIS_XZ, mat_ind), wrapped_objs, wrapped_obj_ind);
-    int ptr5 = add_to_list(make_rect(c0y,c0z, c1y,c1z, c1x, AXIS_YZ, mat_ind), wrapped_objs, wrapped_obj_ind);
-    int ptr6 = add_to_list(make_rect(c0y,c0z, c1y,c1z, c0x, AXIS_YZ, mat_ind), wrapped_objs, wrapped_obj_ind);
-
-    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
-    o.s[0] = OBJ_BOX;
-    o.s[1] = c0x;
-    o.s[2] = c0y;
-    o.s[3] = c0z;
-    o.s[4] = c1x;
-    o.s[5] = c1y;
-    o.s[6] = c1z;
-    o.s[8] = mat_ind;
-    o.s[10] = ptr1;
-    o.s[11] = ptr2;
-    o.s[12] = ptr3;
-    o.s[13] = ptr4;
-    o.s[14] = ptr5;
-    o.s[15] = ptr6;
-    return o;
-}
-
-
-
-cl_float16 make_rotated(cl_float16* wrapped_objs, int* wrapped_obj_ind, cl_float16 obj, rot_axis ax, float angle){
-    int ptr = add_to_list(obj, wrapped_objs, wrapped_obj_ind);
-    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
-    o.s[0] = OBJ_ROTATED;
-    o.s[7] = ax;
-    o.s[9] = angle;
-    o.s[10] = ptr;
-    return o;
-}
-
-
-
-cl_float16 make_translated(cl_float16* wrapped_objs, int* wrapped_obj_ind, cl_float16 obj, float ox, float oy, float oz){
-    int ptr = add_to_list(obj, wrapped_objs, wrapped_obj_ind);
-    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
-    o.s[0] = OBJ_TRANSLATED;
-    o.s[1] = ox;
-    o.s[2] = oy;
-    o.s[3] = oz;
-    o.s[10] = ptr;
-    return o;
-}
-
-
-
-cl_float16 make_flip_face(cl_float16* wrapped_objs, int* wrapped_obj_ind, cl_float16 obj){
-    int ptr = add_to_list(obj, wrapped_objs, wrapped_obj_ind);
-    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
-    o.s[0] = OBJ_FLIP_FACE;
-    o.s[10] = ptr;
-    return o;
-}
-
-
-
-cl_float16 make_constant_medium_sphere(float cx, float cy, float cz, float r, float density, int mat_ind){
-    cl_float16 o = {{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
-    o.s[0] = OBJ_CONSTANT_MEDIUM;
-    o.s[1] = cx;
-    o.s[2] = cy;
-    o.s[3] = cz;
-    o.s[7] = r;
-    o.s[8] = mat_ind;
-    o.s[9] = -1.0f/density;
-    return o;
-}
-
+int sameClFloat16(cl_float16* a, cl_float16* b);
+int addItemIgnoringDuplicates(cl_float16 item, cl_float16* arr, int* index);
+void addToUniques(Object* o, Object** out_objs, Material** out_mats, Texture** out_texs, int* out_objs_count, int* out_mats_count, int* out_texs_count);
+int packObjectToGPUArrays(Object* obj, cl_float16* objs, int* objs_ind, cl_float16* mats, int* mats_ind, cl_float16* texs, int* texs_ind, cl_float16* wraps, int* wraps_ind);
 
 #endif // __OBJECTS_H_
